@@ -1,5 +1,4 @@
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- No extension needed - using built-in gen_random_uuid()
 
 -- Users table (extends Supabase auth.users)
 CREATE TABLE public.users (
@@ -12,7 +11,7 @@ CREATE TABLE public.users (
 
 -- BA Profiles table
 CREATE TABLE public.ba_profiles (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL UNIQUE REFERENCES public.users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     phone TEXT NOT NULL,
@@ -26,7 +25,7 @@ CREATE TABLE public.ba_profiles (
 
 -- BA Photos table
 CREATE TABLE public.ba_photos (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ba_id UUID NOT NULL REFERENCES public.ba_profiles(id) ON DELETE CASCADE,
     photo_type TEXT NOT NULL, -- 'headshot', 'full_body', etc.
     url TEXT NOT NULL,
@@ -35,7 +34,7 @@ CREATE TABLE public.ba_photos (
 
 -- Jobs table
 CREATE TABLE public.jobs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,
     brand TEXT NOT NULL,
     description TEXT NOT NULL,
@@ -56,7 +55,7 @@ CREATE TABLE public.jobs (
 
 -- Job Applications table
 CREATE TABLE public.job_applications (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
     ba_id UUID NOT NULL REFERENCES public.ba_profiles(id) ON DELETE CASCADE,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'withdrawn')),
@@ -69,7 +68,7 @@ CREATE TABLE public.job_applications (
 
 -- Check-ins table
 CREATE TABLE public.check_ins (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
     ba_id UUID NOT NULL REFERENCES public.ba_profiles(id) ON DELETE CASCADE,
     check_in_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -83,7 +82,7 @@ CREATE TABLE public.check_ins (
 
 -- Job Photos table
 CREATE TABLE public.job_photos (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
     ba_id UUID NOT NULL REFERENCES public.ba_profiles(id) ON DELETE CASCADE,
     url TEXT NOT NULL,
@@ -93,7 +92,7 @@ CREATE TABLE public.job_photos (
 
 -- Payments table
 CREATE TABLE public.payments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
     ba_id UUID NOT NULL REFERENCES public.ba_profiles(id) ON DELETE CASCADE,
     amount DECIMAL(10, 2) NOT NULL,
