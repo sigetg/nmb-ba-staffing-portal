@@ -13,7 +13,7 @@ app = FastAPI(
 )
 
 # Build CORS origins list, including frontend_url if set
-cors_origins = list(settings.cors_origins)
+cors_origins = list(settings.cors_origins_list)
 if settings.frontend_url and settings.frontend_url not in cors_origins:
     cors_origins.append(settings.frontend_url)
 
