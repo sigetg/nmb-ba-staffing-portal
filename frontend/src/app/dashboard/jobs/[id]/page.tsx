@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge, Alert } from '@/components/ui'
 import { ChevronLeft, Calendar, Clock, MapPin, FileText, CheckCircle2 } from 'lucide-react'
-import { parseLocalDate } from '@/lib/utils'
+import { parseLocalDate, getTimezoneAbbr } from '@/lib/utils'
 import type { Job, BAProfile, JobApplication } from '@/types'
 
 export default function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -210,7 +210,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
               <div>
                 <p className="text-sm text-primary-400">Time</p>
                 <p className="font-medium text-gray-900">
-                  {job.start_time} - {job.end_time}
+                  {job.start_time} - {job.end_time} {job.timezone ? getTimezoneAbbr(job.timezone) : ''}
                 </p>
               </div>
             </div>

@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import List
 
 
@@ -10,6 +11,7 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_anon_key: str = ""
     supabase_service_role_key: str = ""
+    supabase_jwt_secret: str = ""
     database_url: str = ""
 
     # Security
@@ -18,7 +20,14 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
 
     # CORS
-    cors_origins: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    cors_origins: List[str] = ["http://localhost:3001", "http://127.0.0.1:3001"]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v):
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
 
     # Stripe
     stripe_secret_key: str = ""
@@ -29,6 +38,8 @@ class Settings(BaseSettings):
 
     # Resend
     resend_api_key: str = ""
+    email_from: str = "NMB Media <onboarding@resend.dev>"
+    frontend_url: str = "http://localhost:3001"
 
     # Twilio
     twilio_account_sid: str = ""

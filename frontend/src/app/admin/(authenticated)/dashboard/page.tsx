@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle, Badge } from '@/components/ui'
 import { Users, Hourglass, UserCheck, Briefcase, Activity, ClipboardList } from 'lucide-react'
-import { formatJobStatus, parseLocalDate } from '@/lib/utils'
+import { formatJobStatus, getJobDisplayStatus, getJobStatusBadgeVariant, getLocalToday, parseLocalDate } from '@/lib/utils'
 
 async function getAdminDashboardData() {
   const supabase = await createClient()
@@ -20,7 +20,7 @@ async function getAdminDashboardData() {
     supabase.from('ba_profiles').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
     supabase.from('ba_profiles').select('*', { count: 'exact', head: true }).eq('status', 'approved'),
     supabase.from('jobs').select('*', { count: 'exact', head: true }),
-    supabase.from('jobs').select('*', { count: 'exact', head: true }).in('status', ['published', 'in_progress']),
+    supabase.from('jobs').select('*', { count: 'exact', head: true }).eq('status', 'published'),
     supabase.from('job_applications').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
   ])
 
@@ -32,13 +32,14 @@ async function getAdminDashboardData() {
     .order('created_at', { ascending: false })
     .limit(5)
 
-  // Get active jobs
+  // Get active jobs (today and future only)
   const { data: activeJobsList } = await supabase
     .from('jobs')
     .select('*')
-    .in('status', ['published', 'in_progress'])
+    .eq('status', 'published')
+    .gte('date', getLocalToday())
     .order('date', { ascending: true })
-    .limit(5)
+    .limit(10)
 
   // Get recent applications
   const { data: recentApplications } = await supabase
@@ -65,6 +66,17 @@ async function getAdminDashboardData() {
 
 export default async function AdminDashboardPage() {
   const { stats, pendingBAsList, activeJobsList, recentApplications } = await getAdminDashboardData()
+
+  // Filter out completed same-day jobs and sort in_progress first
+  const sortedActiveJobs = (activeJobsList || [])
+    .map(job => ({ ...job, displayStatus: getJobDisplayStatus(job) }))
+    .filter(job => job.displayStatus === 'in_progress' || job.displayStatus === 'upcoming')
+    .sort((a, b) => {
+      if (a.displayStatus === 'in_progress' && b.displayStatus !== 'in_progress') return -1
+      if (b.displayStatus === 'in_progress' && a.displayStatus !== 'in_progress') return 1
+      return a.date.localeCompare(b.date)
+    })
+    .slice(0, 5)
 
   return (
     <div className="space-y-6">
@@ -210,13 +222,15 @@ export default async function AdminDashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {activeJobsList.length === 0 ? (
+            {sortedActiveJobs.length === 0 ? (
               <div className="text-center py-8 text-primary-400">
                 No active jobs
               </div>
             ) : (
               <div className="space-y-3">
-                {activeJobsList.map((job: { id: string; title: string; brand: string; date: string; slots: number; slots_filled: number; status: string }) => (
+                {sortedActiveJobs.map((job) => {
+                  const { displayStatus } = job
+                  return (
                   <Link
                     key={job.id}
                     href={`/admin/jobs/${job.id}`}
@@ -231,11 +245,12 @@ export default async function AdminDashboardPage() {
                         {job.slots_filled}/{job.slots} slots filled
                       </p>
                     </div>
-                    <Badge variant={job.status === 'published' ? 'info' : 'success'}>
-                      {formatJobStatus(job.status)}
+                    <Badge variant={getJobStatusBadgeVariant(displayStatus)}>
+                      {formatJobStatus(displayStatus)}
                     </Badge>
                   </Link>
-                ))}
+                  )
+                })}
               </div>
             )}
           </CardContent>

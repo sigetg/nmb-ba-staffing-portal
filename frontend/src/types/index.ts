@@ -20,9 +20,16 @@ export interface BAProfile {
   zip_code: string
   status: BAStatus
   availability: Record<string, unknown>
+  languages?: string[]
+  shirt_size?: string
+  additional_info?: string
+  admin_notes?: string
+  resume_url?: string
+  has_seen_welcome?: boolean
   stripe_account_id?: string
   created_at: string
   updated_at?: string
+  email?: string
 }
 
 export interface BAPhoto {
@@ -34,7 +41,8 @@ export interface BAPhoto {
 }
 
 // Job types
-export type JobStatus = 'draft' | 'published' | 'in_progress' | 'completed' | 'cancelled'
+export type JobStatus = 'draft' | 'published' | 'cancelled'
+export type DisplayJobStatus = 'draft' | 'upcoming' | 'in_progress' | 'completed' | 'cancelled'
 
 export interface Job {
   id: string
@@ -51,6 +59,7 @@ export interface Job {
   slots: number
   slots_filled: number
   status: JobStatus
+  timezone: string
   worksheet_url?: string
   created_at: string
   updated_at?: string
@@ -71,6 +80,31 @@ export interface JobApplication {
 }
 
 // Check-in types
+export interface KpiSnapshot {
+  total_engagements?: number
+  qr_codes_scanned?: number
+  customers_walked_in?: number
+  common_objection?: string
+}
+
+export interface Materials {
+  condition_acceptable?: boolean
+  all_returned?: boolean
+  items?: string[]
+  other_description?: string
+}
+
+export interface ScopeOfWork {
+  canvass_neighborhoods?: boolean
+  engage_pedestrians?: boolean
+  engage_pedestrians_count?: number
+  distribute_flyers?: boolean
+  distribute_flyers_count?: number
+  direct_customers?: boolean
+  direct_customers_count?: number
+  maintain_appearance?: boolean
+}
+
 export interface CheckIn {
   id: string
   job_id: string
@@ -81,6 +115,15 @@ export interface CheckIn {
   check_in_longitude: number
   check_out_latitude?: number
   check_out_longitude?: number
+  checkout_notes?: string
+  checkout_issues?: string
+  checkout_customer_feedback?: string
+  checkout_foot_traffic?: string
+  kpi_snapshot?: KpiSnapshot
+  schedule_deviation?: boolean
+  schedule_deviation_explanation?: string
+  materials?: Materials
+  scope_of_work?: ScopeOfWork
 }
 
 // Job Photo types
@@ -90,5 +133,6 @@ export interface JobPhoto {
   ba_id: string
   url: string
   caption?: string
+  photo_type: string
   created_at: string
 }

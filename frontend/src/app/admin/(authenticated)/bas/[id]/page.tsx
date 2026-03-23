@@ -5,9 +5,9 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge, Alert, Avatar, Textarea } from '@/components/ui'
-import { ChevronLeft, Check, X } from 'lucide-react'
+import { ChevronLeft, Check, X, FileText, Save } from 'lucide-react'
 import type { BAProfile, BAPhoto, Job, JobApplication } from '@/types'
-import { formatJobStatus, parseLocalDate } from '@/lib/utils'
+import { formatJobStatus, getJobDisplayStatus, getJobStatusBadgeVariant, parseLocalDate } from '@/lib/utils'
 
 interface AssignedJob extends JobApplication {
   jobs: Job
@@ -25,6 +25,7 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [notes, setNotes] = useState('')
+  const [isSavingNotes, setIsSavingNotes] = useState(false)
 
   const router = useRouter()
   const supabase = createClient()
@@ -38,7 +39,7 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
       // Get BA profile
       const { data: profileData, error: profileError } = await supabase
         .from('ba_profiles')
-        .select('*')
+        .select('*, users(email)')
         .eq('id', id)
         .single()
 
@@ -47,7 +48,11 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
         return
       }
 
-      setProfile(profileData)
+      const email = (profileData as Record<string, unknown>).users
+        ? ((profileData as Record<string, unknown>).users as { email?: string })?.email
+        : undefined
+      setProfile({ ...profileData, email })
+      setNotes(profileData.admin_notes || '')
 
       // Get photos
       const { data: photosData } = await supabase
@@ -81,16 +86,25 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
     setIsUpdating(true)
 
     try {
-      const { error: updateError } = await supabase
-        .from('ba_profiles')
-        .update({
-          status: newStatus,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', profile.id)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setError('Not authenticated')
+        return
+      }
 
-      if (updateError) {
-        setError(updateError.message)
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const res = await fetch(`${apiUrl}/api/admin/bas/${profile.id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ status: newStatus, notes: notes || null }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.detail || 'Failed to update status')
         return
       }
 
@@ -107,6 +121,44 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
       setError('Failed to update status')
     } finally {
       setIsUpdating(false)
+    }
+  }
+
+  const saveNotes = async () => {
+    if (!profile) return
+
+    setError(null)
+    setSuccess(null)
+    setIsSavingNotes(true)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setError('Not authenticated')
+        return
+      }
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const res = await fetch(`${apiUrl}/api/admin/bas/${profile.id}/notes`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ notes }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.detail || 'Failed to save notes')
+        return
+      }
+
+      setSuccess('Notes saved successfully')
+    } catch {
+      setError('Failed to save notes')
+    } finally {
+      setIsSavingNotes(false)
     }
   }
 
@@ -136,7 +188,10 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
     suspended: { variant: 'error' as const, text: 'Suspended' },
   }[profile.status]
 
-  const profilePhoto = photos.find(p => p.photo_type === 'profile')
+  const headshotPhoto = photos.find(p => p.photo_type === 'headshot')
+  const fullLengthPhoto = photos.find(p => p.photo_type === 'full_length')
+  const otherPhotos = photos.filter(p => p.photo_type !== 'headshot' && p.photo_type !== 'full_length')
+  const profilePhoto = headshotPhoto || photos.find(p => p.photo_type === 'profile')
   const availability = profile.availability as Record<string, { morning?: boolean; afternoon?: boolean; evening?: boolean }>
 
   return (
@@ -148,7 +203,9 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
         >
           <ChevronLeft className="w-5 h-5" />
         </Link>
-        <h1 className="text-2xl font-bold text-heading">BA Review</h1>
+        <h1 className="text-2xl font-bold text-heading">
+          {profile.status === 'pending' ? 'Review Application' : 'Brand Ambassador'}
+        </h1>
       </div>
 
       {error && (
@@ -205,6 +262,18 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
               <p className="font-medium text-gray-900">{profile.name}</p>
             </div>
             <div>
+              <p className="text-sm text-primary-400">Email</p>
+              <p className="font-medium">
+                {profile.email ? (
+                  <a href={`mailto:${profile.email}`} className="text-primary-400 hover:text-primary-500 underline">
+                    {profile.email}
+                  </a>
+                ) : (
+                  <span className="text-gray-400">Not available</span>
+                )}
+              </p>
+            </div>
+            <div>
               <p className="text-sm text-primary-400">Phone Number</p>
               <p className="font-medium text-gray-900">{profile.phone}</p>
             </div>
@@ -219,6 +288,68 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
               </p>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Details */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Details</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <p className="text-sm text-primary-400">Languages</p>
+              {profile.languages && profile.languages.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {profile.languages.map((lang) => (
+                    <span
+                      key={lang}
+                      className="px-2.5 py-1 text-xs bg-primary-50 text-primary-700 rounded-full border border-primary-200"
+                    >
+                      {lang}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 mt-1">Not provided</p>
+              )}
+            </div>
+            <div>
+              <p className="text-sm text-primary-400">Shirt Size</p>
+              <p className="font-medium text-gray-900 mt-1">
+                {profile.shirt_size || <span className="text-gray-400 font-normal">Not provided</span>}
+              </p>
+            </div>
+            <div className="sm:col-span-2">
+              <p className="text-sm text-primary-400">Additional Information</p>
+              <p className="font-medium text-gray-900 mt-1">
+                {profile.additional_info || <span className="text-gray-400 font-normal">Not provided</span>}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Resume */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Resume</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {profile.resume_url ? (
+            <a
+              href={profile.resume_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-primary-50 text-primary-700 rounded-lg hover:bg-primary-100 transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              Download Resume
+            </a>
+          ) : (
+            <p className="text-sm text-gray-400">No resume uploaded</p>
+          )}
         </CardContent>
       </Card>
 
@@ -272,19 +403,53 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
               No photos uploaded
             </p>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              {photos.map((photo) => (
-                <div key={photo.id} className="relative aspect-square rounded-lg overflow-hidden">
-                  <img
-                    src={photo.url}
-                    alt={photo.photo_type}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
-                    <span className="text-xs text-white capitalize">{photo.photo_type}</span>
-                  </div>
+            <div className="space-y-4">
+              {/* Labeled headshot and full-length side by side */}
+              {(headshotPhoto || fullLengthPhoto) && (
+                <div className="grid grid-cols-2 gap-4">
+                  {headshotPhoto && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-700 mb-2">Headshot</p>
+                      <div className="relative aspect-square rounded-lg overflow-hidden">
+                        <img
+                          src={headshotPhoto.url}
+                          alt="Headshot"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {fullLengthPhoto && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-700 mb-2">Full-Length Photo</p>
+                      <div className="relative aspect-[3/4] rounded-lg overflow-hidden">
+                        <img
+                          src={fullLengthPhoto.url}
+                          alt="Full-Length"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
-              ))}
+              )}
+              {/* Other photos */}
+              {otherPhotos.length > 0 && (
+                <div className="grid grid-cols-3 gap-3">
+                  {otherPhotos.map((photo) => (
+                    <div key={photo.id} className="relative aspect-square rounded-lg overflow-hidden">
+                      <img
+                        src={photo.url}
+                        alt={photo.photo_type}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
+                        <span className="text-xs text-white capitalize">{photo.photo_type}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </CardContent>
@@ -313,7 +478,9 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
                   </tr>
                 </thead>
                 <tbody>
-                  {assignedJobs.map((aj) => (
+                  {assignedJobs.map((aj) => {
+                    const jobDisplayStatus = getJobDisplayStatus(aj.jobs)
+                    return (
                     <tr key={aj.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="py-3 px-4 text-sm">
                         <Link
@@ -329,16 +496,13 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
                       </td>
                       <td className="py-3 px-4 text-sm text-gray-900">${aj.jobs.pay_rate}/hr</td>
                       <td className="py-3 px-4">
-                        <Badge variant={
-                          aj.jobs.status === 'published' ? 'info' :
-                          aj.jobs.status === 'in_progress' ? 'success' :
-                          aj.jobs.status === 'cancelled' ? 'error' : 'default'
-                        }>
-                          {formatJobStatus(aj.jobs.status)}
+                        <Badge variant={getJobStatusBadgeVariant(jobDisplayStatus)}>
+                          {formatJobStatus(jobDisplayStatus)}
                         </Badge>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -349,7 +513,18 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
       {/* Admin Notes */}
       <Card>
         <CardHeader>
-          <CardTitle>Admin Notes</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Admin Notes</CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={saveNotes}
+              isLoading={isSavingNotes}
+            >
+              <Save className="w-4 h-4 mr-1" />
+              Save Notes
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <Textarea

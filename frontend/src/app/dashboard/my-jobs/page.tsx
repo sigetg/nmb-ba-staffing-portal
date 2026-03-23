@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Card, CardContent, Badge } from '@/components/ui'
 import { Calendar, Clock, MapPin, CheckCircle2, XCircle, ChevronRight } from 'lucide-react'
-import { parseLocalDate, getLocalToday } from '@/lib/utils'
+import { parseLocalDate, getLocalToday, getJobDisplayStatus, getTimezoneAbbr } from '@/lib/utils'
 
 async function getMyJobs(userId: string) {
   const supabase = await createClient()
@@ -65,17 +65,23 @@ export default async function MyJobsPage() {
     ? applications.find((app: { jobs: { id: string } }) => app.jobs.id === activeJobId)
     : null
 
-  // Categorize jobs
+  // Categorize jobs using computed display status
   const upcoming = applications.filter(
-    (app: { status: string; jobs: { date: string } }) =>
-      app.status === 'approved' && app.jobs.date >= today
+    (app: { status: string; jobs: { date: string; start_time: string; end_time: string; status: string; timezone: string } }) => {
+      if (app.status !== 'approved') return false
+      const displayStatus = getJobDisplayStatus(app.jobs)
+      return displayStatus === 'upcoming' || displayStatus === 'in_progress'
+    }
   )
   const pending = applications.filter(
     (app: { status: string }) => app.status === 'pending'
   )
   const completed = applications.filter(
-    (app: { status: string; jobs: { date: string } }) =>
-      app.status === 'approved' && app.jobs.date < today
+    (app: { status: string; jobs: { date: string; start_time: string; end_time: string; status: string; timezone: string } }) => {
+      if (app.status !== 'approved') return false
+      const displayStatus = getJobDisplayStatus(app.jobs)
+      return displayStatus === 'completed'
+    }
   )
   const rejected = applications.filter(
     (app: { status: string }) => app.status === 'rejected'
@@ -94,6 +100,8 @@ export default async function MyJobsPage() {
       end_time: string
       location: string
       pay_rate: number
+      status: string
+      timezone: string
     }
   }
 
@@ -127,7 +135,7 @@ export default async function MyJobsPage() {
             </span>
             <span className="flex items-center gap-1">
               <Clock className="w-4 h-4" />
-              {app.jobs.start_time} - {app.jobs.end_time}
+              {app.jobs.start_time} - {app.jobs.end_time} {app.jobs.timezone ? getTimezoneAbbr(app.jobs.timezone) : ''}
             </span>
             <span className="flex items-center gap-1">
               <MapPin className="w-4 h-4" />

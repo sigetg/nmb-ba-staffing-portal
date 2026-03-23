@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle, Badge, Button } from '@/components/ui'
 import { Plus, Briefcase, Eye, Pencil } from 'lucide-react'
-import { formatJobStatus, parseLocalDate } from '@/lib/utils'
+import { formatJobStatus, getJobDisplayStatus, getJobStatusBadgeVariant, getTimezoneAbbr, parseLocalDate } from '@/lib/utils'
 
 async function getJobs(searchParams: { status?: string; brand?: string }) {
   const supabase = await createClient()
@@ -40,17 +40,6 @@ export default async function AdminJobsPage({
   const params = await searchParams
   const { jobs, total } = await getJobs(params)
 
-  const statusBadge = (status: string) => {
-    const variants: Record<string, 'default' | 'info' | 'success' | 'warning' | 'error'> = {
-      draft: 'default',
-      published: 'info',
-      in_progress: 'success',
-      completed: 'default',
-      cancelled: 'error',
-    }
-    return variants[status] || 'default'
-  }
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -80,8 +69,6 @@ export default async function AdminJobsPage({
               <option value="">All Statuses</option>
               <option value="draft">DRAFT</option>
               <option value="published">PUBLISHED</option>
-              <option value="in_progress">IN PROGRESS</option>
-              <option value="completed">COMPLETED</option>
               <option value="cancelled">CANCELLED</option>
             </select>
             <input
@@ -127,7 +114,9 @@ export default async function AdminJobsPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {jobs.map((job: { id: string; title: string; brand: string; date: string; start_time: string; end_time: string; location: string; slots: number; slots_filled: number; pay_rate: number; status: string }) => (
+                  {jobs.map((job: { id: string; title: string; brand: string; date: string; start_time: string; end_time: string; location: string; slots: number; slots_filled: number; pay_rate: number; status: string; timezone: string }) => {
+                    const displayStatus = getJobDisplayStatus(job)
+                    return (
                     <tr key={job.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="py-3 px-4">
                         <div>
@@ -141,7 +130,7 @@ export default async function AdminJobsPage({
                             {parseLocalDate(job.date).toLocaleDateString()}
                           </p>
                           <p className="text-sm text-primary-400">
-                            {job.start_time} - {job.end_time}
+                            {job.start_time} - {job.end_time} {getTimezoneAbbr(job.timezone)}
                           </p>
                         </div>
                       </td>
@@ -155,7 +144,7 @@ export default async function AdminJobsPage({
                         ${job.pay_rate}/hr
                       </td>
                       <td className="py-3 px-4">
-                        <Badge variant={statusBadge(job.status)}>{formatJobStatus(job.status)}</Badge>
+                        <Badge variant={getJobStatusBadgeVariant(displayStatus)}>{formatJobStatus(displayStatus)}</Badge>
                       </td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -176,7 +165,8 @@ export default async function AdminJobsPage({
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

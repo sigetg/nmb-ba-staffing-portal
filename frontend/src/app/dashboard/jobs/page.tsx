@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Card, CardContent, Badge } from '@/components/ui'
 import { Calendar, Clock, MapPin, Briefcase, AlertTriangle } from 'lucide-react'
-import { parseLocalDate, getLocalToday } from '@/lib/utils'
+import { parseLocalDate, getLocalToday, getTimezoneAbbr } from '@/lib/utils'
 
 async function getAvailableJobs(userId: string) {
   const supabase = await createClient()
@@ -18,7 +18,7 @@ async function getAvailableJobs(userId: string) {
   const { data: jobs } = await supabase
     .from('jobs')
     .select('*')
-    .in('status', ['published', 'in_progress'])
+    .eq('status', 'published')
     .gte('date', getLocalToday())
     .order('date', { ascending: true })
 
@@ -88,7 +88,7 @@ export default async function JobsPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {jobs.map((job: { id: string; title: string; brand: string; description: string; location: string; date: string; start_time: string; end_time: string; pay_rate: number; slots: number; slots_filled: number }) => {
+          {jobs.map((job: { id: string; title: string; brand: string; description: string; location: string; date: string; start_time: string; end_time: string; pay_rate: number; slots: number; slots_filled: number; timezone: string }) => {
             const isApplied = appliedJobIds.has(job.id)
             const applicationStatus = applicationStatuses[job.id]
             const slotsAvailable = job.slots - job.slots_filled
@@ -129,7 +129,7 @@ export default async function JobsPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4" />
-                      <span>{job.start_time} - {job.end_time}</span>
+                      <span>{job.start_time} - {job.end_time} {getTimezoneAbbr(job.timezone)}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <MapPin className="w-4 h-4" />

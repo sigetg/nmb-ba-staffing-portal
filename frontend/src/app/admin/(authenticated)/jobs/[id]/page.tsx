@@ -4,10 +4,11 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle, Badge } from '@/components/ui'
 import { ChevronLeft, Calendar, Clock, MapPin, FileText, Pencil } from 'lucide-react'
 import type { Job, JobApplication, CheckIn } from '@/types'
-import { formatJobStatus, parseLocalDate } from '@/lib/utils'
+import { ExportCSVButton } from '@/components/ui/export-csv-button'
+import { formatJobStatus, getJobDisplayStatus, getJobStatusBadgeVariant, getTimezoneAbbr, parseLocalDate } from '@/lib/utils'
 
 interface ApplicationWithBA extends JobApplication {
-  ba_profiles: { id: string; name: string; phone: string }
+  ba_profiles: { id: string; name: string; phone: string; users: { email: string } | null }
 }
 
 export default async function AdminJobDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -26,7 +27,7 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
 
   const { data: applications } = await supabase
     .from('job_applications')
-    .select('*, ba_profiles(id, name, phone)')
+    .select('*, ba_profiles(id, name, phone, users(email))')
     .eq('job_id', id)
     .order('applied_at', { ascending: false })
 
@@ -40,16 +41,7 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
   const typedCheckIns = (checkIns || []) as CheckIn[]
   const approvedApplications = typedApplications.filter(a => a.status === 'approved')
 
-  const statusVariant = (status: string) => {
-    const variants: Record<string, 'default' | 'info' | 'success' | 'warning' | 'error'> = {
-      draft: 'default',
-      published: 'info',
-      in_progress: 'success',
-      completed: 'default',
-      cancelled: 'error',
-    }
-    return variants[status] || 'default'
-  }
+  const displayStatus = getJobDisplayStatus(typedJob)
 
   const appStatusVariant = (status: string) => {
     const variants: Record<string, 'default' | 'info' | 'success' | 'warning' | 'error'> = {
@@ -90,7 +82,7 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
             </div>
             <div className="flex items-center gap-4">
               <span className="text-lg font-semibold text-gray-900">${typedJob.pay_rate}/hr</span>
-              <Badge variant={statusVariant(typedJob.status)}>{formatJobStatus(typedJob.status)}</Badge>
+              <Badge variant={getJobStatusBadgeVariant(displayStatus)}>{formatJobStatus(displayStatus)}</Badge>
             </div>
           </div>
           <div className="mt-4">
@@ -128,7 +120,7 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
               <div>
                 <p className="text-sm text-primary-400">Time</p>
                 <p className="font-medium text-gray-900">
-                  {typedJob.start_time} - {typedJob.end_time}
+                  {typedJob.start_time} - {typedJob.end_time} {getTimezoneAbbr(typedJob.timezone)}
                 </p>
               </div>
             </div>
@@ -215,9 +207,9 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
                       <td className="py-3 px-4 text-right">
                         <Link
                           href={`/admin/applications/${app.id}`}
-                          className="text-sm text-primary-400 hover:text-primary-500"
+                          className={`text-sm ${app.status === 'approved' ? 'text-gray-400 hover:text-gray-500' : 'text-primary-400 hover:text-primary-500'}`}
                         >
-                          Review
+                          {app.status === 'approved' ? 'View' : 'Review'}
                         </Link>
                       </td>
                     </tr>
@@ -232,7 +224,17 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
       {/* Assigned BAs Card */}
       <Card>
         <CardHeader>
-          <CardTitle>Assigned BAs ({approvedApplications.length})</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Assigned BAs ({approvedApplications.length})</CardTitle>
+            <ExportCSVButton
+              data={approvedApplications.map(a => ({
+                name: a.ba_profiles?.name || '',
+                phone: a.ba_profiles?.phone || '',
+                email: a.ba_profiles?.users?.email || '',
+              }))}
+              filename={`assigned-bas-${typedJob.title.replace(/\s+/g, '-').toLowerCase()}`}
+            />
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {approvedApplications.length === 0 ? (
