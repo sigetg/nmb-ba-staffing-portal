@@ -1,6 +1,14 @@
 @import "tailwindcss";
 
 :root {
+  --color-primary-50: #FEF4EC;
+  --color-primary-100: #FDDCC4;
+  --color-primary-200: #FBBC8A;
+  --color-primary-400: #E8853D;
+  --color-primary-500: #D47332;
+  --color-primary-600: #B85E25;
+  --color-heading: #1a2b3b;
+  --color-bg-page: #F8F9FB;
   --background: #ffffff;
   --foreground: #171717;
 }
@@ -8,19 +16,46 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-primary-50: var(--color-primary-50);
+  --color-primary-100: var(--color-primary-100);
+  --color-primary-200: var(--color-primary-200);
+  --color-primary-400: var(--color-primary-400);
+  --color-primary-500: var(--color-primary-500);
+  --color-primary-600: var(--color-primary-600);
+  --color-heading: var(--color-heading);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Google Places Autocomplete dropdown */
+.pac-container {
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  font-family: inherit;
+  font-size: 0.875rem;
+  margin-top: 4px;
+  z-index: 9999;
+}
+
+.pac-item {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  border-top: 1px solid #f3f4f6;
+}
+
+.pac-item:first-child {
+  border-top: none;
+}
+
+.pac-item:hover {
+  background-color: #f9fafb;
+}
+
+.pac-item-selected {
+  background-color: #f3f4f6;
 }
