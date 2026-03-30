@@ -52,7 +52,7 @@ export async function updateSession(request: NextRequest) {
   if (isPublicRoute) {
     // If user is logged in and trying to access auth pages, redirect to appropriate dashboard
     // But allow /auth/setup so new signups can complete their profile
-    if (user && pathname !== '/auth/setup' && (pathname.startsWith('/auth/') || pathname === '/admin/login')) {
+    if (user && pathname !== '/auth/setup' && (pathname.startsWith('/auth/') || pathname === '/admin/login' || pathname === '/')) {
       // Only query role when we need to redirect authenticated users away from login pages
       const { data: userData } = await supabase
         .from('users')
@@ -68,9 +68,8 @@ export async function updateSession(request: NextRequest) {
 
   // For protected routes, check authentication
   if (!user || error) {
-    // Determine appropriate login page based on route
-    const loginUrl = pathname.startsWith('/admin') ? '/admin/login' : '/auth/login'
-    const redirectUrl = new URL(loginUrl, request.url)
+    // Redirect unauthenticated users to the unified home page login
+    const redirectUrl = new URL('/', request.url)
     redirectUrl.searchParams.set('redirect', pathname)
     return NextResponse.redirect(redirectUrl)
   }
