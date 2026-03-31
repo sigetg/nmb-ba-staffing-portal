@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Alert } from '@/components/ui'
-import { ChevronLeft, MapPin, Clock, Camera, Loader2, LogOut, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronLeft, MapPin, Clock, Camera, Loader2, LogOut, CheckCircle2, ChevronDown, ChevronUp, X } from 'lucide-react'
 import type { Job, CheckIn, JobPhoto } from '@/types'
 
 const PHOTO_CATEGORIES = [
@@ -36,6 +36,7 @@ export default function ActiveJobPage({ params }: { params: Promise<{ id: string
     team_uniform: [],
   })
   const [isUploadingPhoto, setIsUploadingPhoto] = useState<string | null>(null)
+  const [isDeletingPhoto, setIsDeletingPhoto] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [profileId, setProfileId] = useState<string | null>(null)
 
@@ -50,6 +51,7 @@ export default function ActiveJobPage({ params }: { params: Promise<{ id: string
   // Timer state
   const [elapsed, setElapsed] = useState('')
 
+  const isRedirecting = useRef(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -80,6 +82,7 @@ export default function ActiveJobPage({ params }: { params: Promise<{ id: string
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
+        isRedirecting.current = true
         router.push('/auth/login')
         return
       }
@@ -98,7 +101,49 @@ export default function ActiveJobPage({ params }: { params: Promise<{ id: string
       }
       setProfileId(profile.id)
 
-      // Get active check-in (no check_out_time)
+      // Load job with days/locations to detect multi-day
+      const { data: jobData } = await supabase
+        .from('jobs')
+        .select('*, job_days(*, job_day_locations(*))')
+        .eq('id', id)
+        .single()
+
+      if (!jobData) {
+        setError('Job not found')
+        setIsLoading(false)
+        return
+      }
+
+      // Redirect to multi-day flow if job has days
+      const jobDays = jobData.job_days || []
+      if (jobDays.length > 0) {
+        // Find active location_check_in (no check_out_time)
+        const allLocationIds = jobDays.flatMap((d: { job_day_locations: { id: string }[] }) =>
+          (d.job_day_locations || []).map((l: { id: string }) => l.id)
+        )
+        if (allLocationIds.length > 0) {
+          const { data: activeCi } = await supabase
+            .from('location_check_ins')
+            .select('*, job_day_locations!inner(id, job_day_id)')
+            .eq('ba_id', profile.id)
+            .is('check_out_time', null)
+            .eq('skipped', false)
+            .in('job_day_location_id', allLocationIds)
+            .limit(1)
+            .single()
+
+          isRedirecting.current = true
+          if (activeCi) {
+            const dayId = (activeCi as { job_day_locations: { job_day_id: string } }).job_day_locations.job_day_id
+            router.push(`/dashboard/jobs/${id}/day/${dayId}/location/${activeCi.job_day_location_id}/active`)
+          } else {
+            router.push(`/dashboard/jobs/${id}/check-in`)
+          }
+          return
+        }
+      }
+
+      // Legacy flow: Get active check-in (no check_out_time)
       const { data: checkInData } = await supabase
         .from('check_ins')
         .select('*')
@@ -117,6 +162,7 @@ export default function ActiveJobPage({ params }: { params: Promise<{ id: string
           .not('check_out_time', 'is', null)
           .single()
 
+        isRedirecting.current = true
         if (completedCheckIn) {
           router.push('/dashboard/my-jobs')
         } else {
@@ -125,13 +171,6 @@ export default function ActiveJobPage({ params }: { params: Promise<{ id: string
         return
       }
       setCheckIn(checkInData)
-
-      // Load job
-      const { data: jobData } = await supabase
-        .from('jobs')
-        .select('*')
-        .eq('id', id)
-        .single()
 
       if (!jobData) {
         setError('Job not found')
@@ -231,6 +270,26 @@ export default function ActiveJobPage({ params }: { params: Promise<{ id: string
     }
   }
 
+  const handlePhotoDelete = async (photo: JobPhoto, photoType: PhotoCategory) => {
+    if (!confirm('Remove this photo?')) return
+    setIsDeletingPhoto(photo.id)
+    try {
+      const pathMatch = photo.url.match(/\/object\/public\/job-photos\/(.+)$/)
+      if (pathMatch) {
+        await supabase.storage.from('job-photos').remove([pathMatch[1]])
+      }
+      await supabase.from('job_photos').delete().eq('id', photo.id)
+      setPhotosByCategory(prev => ({
+        ...prev,
+        [photoType]: prev[photoType].filter(p => p.id !== photo.id),
+      }))
+    } catch {
+      setError('Failed to remove photo')
+    } finally {
+      setIsDeletingPhoto(null)
+    }
+  }
+
   const toggleSection = (type: PhotoCategory) => {
     setExpandedSections(prev => ({ ...prev, [type]: !prev[type] }))
   }
@@ -247,6 +306,13 @@ export default function ActiveJobPage({ params }: { params: Promise<{ id: string
   }
 
   if (!job || !checkIn) {
+    if (isRedirecting.current) {
+      return (
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-400" />
+        </div>
+      )
+    }
     return (
       <div className="text-center py-12">
         <h2 className="text-xl font-semibold text-gray-900">
@@ -380,8 +446,16 @@ export default function ActiveJobPage({ params }: { params: Promise<{ id: string
                     {photos.length > 0 && (
                       <div className="grid grid-cols-3 gap-2">
                         {photos.map((photo) => (
-                          <div key={photo.id} className="relative aspect-square rounded-lg overflow-hidden border border-gray-200">
+                          <div key={photo.id} className="relative aspect-square rounded-lg overflow-hidden border border-gray-200 group">
                             <Image src={photo.url} alt={`${category.label} photo`} fill className="object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => handlePhotoDelete(photo, category.type)}
+                              disabled={isDeletingPhoto === photo.id}
+                              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
+                            >
+                              {isDeletingPhoto === photo.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                            </button>
                           </div>
                         ))}
                       </div>
