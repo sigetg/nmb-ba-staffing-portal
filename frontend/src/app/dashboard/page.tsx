@@ -3,13 +3,19 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle, Badge } from '@/components/ui'
 import { Calendar, Clock, CheckCircle2, Briefcase, ChevronRight } from 'lucide-react'
-import { parseLocalDate, getLocalToday, getTimezoneAbbr } from '@/lib/utils'
+import { getMultiDayDisplayStatus, getJobDateDisplay, getJobLocationDisplay } from '@/lib/utils'
 import { getBAUserWithProfile } from '@/lib/supabase/auth-helpers'
+import type { JobWithDays } from '@/types'
+
+type AppWithJob = {
+  id: string
+  status: string
+  applied_at: string
+  jobs: JobWithDays
+}
 
 async function getDashboardData(profileId: string) {
   const supabase = await createClient()
-
-  const today = getLocalToday()
 
   const [
     { data: applications },
@@ -20,7 +26,7 @@ async function getDashboardData(profileId: string) {
   ] = await Promise.all([
     supabase
       .from('job_applications')
-      .select('*, jobs(*)')
+      .select('*, jobs(*, job_days(date))')
       .eq('ba_id', profileId)
       .order('applied_at', { ascending: false })
       .limit(5),
@@ -36,12 +42,10 @@ async function getDashboardData(profileId: string) {
       .eq('status', 'approved'),
     supabase
       .from('job_applications')
-      .select('*, jobs!inner(*)')
+      .select('*, jobs!inner(*, job_days(*, job_day_locations(*)))')
       .eq('ba_id', profileId)
       .eq('status', 'approved')
-      .gte('jobs.date', today)
-      .order('jobs(date)', { ascending: true })
-      .limit(3),
+      .limit(10),
     supabase
       .from('check_ins')
       .select('*, jobs(*)')
@@ -51,15 +55,53 @@ async function getDashboardData(profileId: string) {
       .single(),
   ])
 
+  // Filter upcoming jobs in JS: only upcoming or in_progress
+  const filteredUpcoming = ((upcomingJobs || []) as AppWithJob[])
+    .filter(app => {
+      const status = getMultiDayDisplayStatus(app.jobs)
+      return status === 'upcoming' || status === 'in_progress'
+    })
+    .slice(0, 3)
+
+  // Check for active multi-day location check-in if no legacy active check-in
+  let activeJob: { job_id: string; check_in_time: string; jobs: Record<string, unknown> } | null = activeCheckIn || null
+  if (!activeJob) {
+    const { data: activeLocationCi } = await supabase
+      .from('location_check_ins')
+      .select('*, job_day_locations!inner(job_id)')
+      .eq('ba_id', profileId)
+      .is('check_out_time', null)
+      .eq('skipped', false)
+      .limit(1)
+      .single()
+
+    if (activeLocationCi) {
+      const jobId = (activeLocationCi as { job_day_locations: { job_id: string } }).job_day_locations.job_id
+      const { data: job } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('id', jobId)
+        .single()
+
+      if (job) {
+        activeJob = {
+          job_id: jobId,
+          check_in_time: activeLocationCi.check_in_time,
+          jobs: job,
+        }
+      }
+    }
+  }
+
   return {
     stats: {
       pending: pendingCount || 0,
       approved: approvedCount || 0,
-      upcoming: upcomingJobs?.length || 0,
+      upcoming: filteredUpcoming.length,
     },
-    upcomingJobs: upcomingJobs || [],
-    recentApplications: applications || [],
-    activeJob: activeCheckIn || null,
+    upcomingJobs: filteredUpcoming,
+    recentApplications: (applications || []) as AppWithJob[],
+    activeJob,
   }
 }
 
@@ -151,7 +193,7 @@ export default async function DashboardPage() {
         <>
           {/* Active Job Banner */}
           {activeJob && activeJob.jobs && (
-            <Link href={`/dashboard/jobs/${activeJob.job_id}/active`} className="block mb-4">
+            <Link href={`/dashboard/jobs/${activeJob.job_id}/active`} className="block mb-6">
               <Card className="border-green-300 bg-green-50 hover:bg-green-100 transition-colors cursor-pointer">
                 <CardContent className="py-4">
                   <div className="flex items-center justify-between">
@@ -241,7 +283,7 @@ export default async function DashboardPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {upcomingJobs.map((app: { id: string; jobs: { id: string; title: string; brand: string; date: string; location: string; start_time: string; end_time: string; timezone: string } }) => (
+                  {upcomingJobs.map((app) => (
                     <div
                       key={app.id}
                       className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
@@ -249,10 +291,10 @@ export default async function DashboardPage() {
                       <div>
                         <h4 className="font-medium text-gray-900">{app.jobs.title}</h4>
                         <p className="text-sm text-primary-400">
-                          {app.jobs.brand} - {app.jobs.location}
+                          {app.jobs.brand} - {getJobLocationDisplay(app.jobs)}
                         </p>
                         <p className="text-sm text-primary-400">
-                          {parseLocalDate(app.jobs.date).toLocaleDateString()} | {app.jobs.start_time} - {app.jobs.end_time} {app.jobs.timezone ? getTimezoneAbbr(app.jobs.timezone) : ''}
+                          {getJobDateDisplay(app.jobs)}
                         </p>
                       </div>
                       <Link
@@ -288,7 +330,7 @@ export default async function DashboardPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {recentApplications.map((app: { id: string; status: string; applied_at: string; jobs: { title: string; brand: string; date: string } }) => {
+                  {recentApplications.map((app) => {
                     const appStatusBadge = {
                       pending: { variant: 'warning' as const, text: 'Pending' },
                       approved: { variant: 'success' as const, text: 'Approved' },
@@ -304,7 +346,7 @@ export default async function DashboardPage() {
                         <div>
                           <h4 className="font-medium text-gray-900">{app.jobs.title}</h4>
                           <p className="text-sm text-primary-400">
-                            {app.jobs.brand} - {parseLocalDate(app.jobs.date).toLocaleDateString()}
+                            {app.jobs.brand} - {getJobDateDisplay(app.jobs)}
                           </p>
                         </div>
                         <Badge variant={appStatusBadge.variant}>{appStatusBadge.text}</Badge>
