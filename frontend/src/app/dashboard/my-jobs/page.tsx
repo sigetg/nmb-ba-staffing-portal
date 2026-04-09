@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Card, CardContent, Badge } from '@/components/ui'
 import { Calendar, Clock, MapPin, CheckCircle2, XCircle, ChevronRight } from 'lucide-react'
-import { parseLocalDate, getLocalToday, getTimezoneAbbr, getMultiDayDisplayStatus, getJobDateDisplay, getJobLocationDisplay } from '@/lib/utils'
+import { parseLocalDate, getLocalToday, getMultiDayDisplayStatus, getJobDateDisplay, getJobLocationDisplay } from '@/lib/utils'
 import type { JobWithDays } from '@/types'
 
 type Application = {
@@ -36,23 +36,18 @@ async function getMyJobs(userId: string, impersonatedBAId?: string) {
       applications: [] as Application[],
       activeJobId: null as string | null,
       activeCheckInTime: null as string | null,
-      isMultiDayActive: false,
       startedJobIds: new Set<string>(),
       completedByCheckoutIds: new Set<string>(),
     }
   }
 
   // Get all applications with job details including days/locations
-  const [{ data: applications }, { data: legacyCheckIns }, { data: allLocationCIs }] = await Promise.all([
+  const [{ data: applications }, { data: allLocationCIs }] = await Promise.all([
     supabase
       .from('job_applications')
       .select('*, jobs(*, job_days(*, job_day_locations(*)))')
       .eq('ba_id', profile.id)
       .order('applied_at', { ascending: false }),
-    supabase
-      .from('check_ins')
-      .select('job_id, check_in_time, check_out_time')
-      .eq('ba_id', profile.id),
     supabase
       .from('location_check_ins')
       .select('id, check_in_time, check_out_time, skipped, job_day_locations!inner(job_id)')
@@ -71,18 +66,6 @@ async function getMyJobs(userId: string, impersonatedBAId?: string) {
     if (ci.check_out_time) entry.checkedOut++
     jobCheckoutMap.set(jobId, entry)
   }
-  // Also check legacy check-ins for started/completed
-  for (const ci of (legacyCheckIns || [])) {
-    if (ci.check_in_time) {
-      startedJobIds.add(ci.job_id)
-      if (ci.check_out_time) {
-        const entry = jobCheckoutMap.get(ci.job_id) || { total: 0, checkedOut: 0 }
-        entry.total++
-        entry.checkedOut++
-        jobCheckoutMap.set(ci.job_id, entry)
-      }
-    }
-  }
   const completedByCheckoutIds = new Set<string>()
   for (const [jobId, entry] of jobCheckoutMap) {
     if (entry.total > 0 && entry.total === entry.checkedOut) {
@@ -92,15 +75,8 @@ async function getMyJobs(userId: string, impersonatedBAId?: string) {
 
   let activeJobId: string | null = null
   let activeCheckInTime: string | null = null
-  let isMultiDayActive = false
 
-  const activeCheckIn = (legacyCheckIns || []).find(c => c.check_in_time && !c.check_out_time)
-  if (activeCheckIn) {
-    activeJobId = activeCheckIn.job_id
-    activeCheckInTime = activeCheckIn.check_in_time
-  }
-
-  // Check for active location_check_in (multi-day)
+  // Check for active location check-in
   const { data: activeLocationCi } = await supabase
     .from('location_check_ins')
     .select('*, job_day_locations!inner(job_id)')
@@ -110,17 +86,15 @@ async function getMyJobs(userId: string, impersonatedBAId?: string) {
     .limit(1)
     .single()
 
-  if (activeLocationCi && !activeJobId) {
+  if (activeLocationCi) {
     activeJobId = (activeLocationCi as { job_day_locations: { job_id: string } }).job_day_locations.job_id
     activeCheckInTime = activeLocationCi.check_in_time
-    isMultiDayActive = true
   }
 
   return {
     applications: (applications || []) as Application[],
     activeJobId,
     activeCheckInTime,
-    isMultiDayActive,
     startedJobIds,
     completedByCheckoutIds,
   }
@@ -181,9 +155,7 @@ export default async function MyJobsPage() {
     const dayProgress = getDayProgress(app.jobs)
     const today = getLocalToday()
     const days = (app.jobs.job_days || []).sort((a, b) => a.date.localeCompare(b.date))
-    const isToday = days.length > 0
-      ? days.some(d => d.date === today)
-      : app.jobs.date === today
+    const isToday = days.some(d => d.date === today)
 
     // Find next day info for multi-day jobs between days
     let nextDayInfo: string | null = null
@@ -221,12 +193,6 @@ export default async function MyJobsPage() {
               <Calendar className="w-4 h-4" />
               {getJobDateDisplay(app.jobs)}
             </span>
-            {app.jobs.start_time && app.jobs.end_time && (
-              <span className="flex items-center gap-1">
-                <Clock className="w-4 h-4" />
-                {app.jobs.start_time} - {app.jobs.end_time} {app.jobs.timezone ? getTimezoneAbbr(app.jobs.timezone) : ''}
-              </span>
-            )}
             <span className="flex items-center gap-1">
               <MapPin className="w-4 h-4" />
               {getJobLocationDisplay(app.jobs)}
@@ -415,9 +381,10 @@ export default async function MyJobsPage() {
           <CardContent>
             <div className="space-y-3">
               {completed.slice(0, 5).map((app) => (
-                <div
+                <Link
                   key={app.id}
-                  className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
+                  href={`/dashboard/jobs/${app.jobs.id}`}
+                  className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
                 >
                   <div>
                     <h4 className="font-medium text-gray-900">
@@ -433,7 +400,7 @@ export default async function MyJobsPage() {
                     </p>
                     <Badge variant="info">Completed</Badge>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           </CardContent>

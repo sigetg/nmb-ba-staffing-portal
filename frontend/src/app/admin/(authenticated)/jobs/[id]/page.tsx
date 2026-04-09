@@ -3,10 +3,10 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle, Badge } from '@/components/ui'
 import { ChevronLeft, Calendar, Clock, MapPin, FileText, Pencil, FileBarChart } from 'lucide-react'
-import type { Job, JobApplication, CheckIn, JobDay, JobDayLocation, LocationCheckIn, JobType, JobTypeKpi, JobTypeQuestion, JobTypeQuestionOption, CheckoutResponse, CheckoutResponseValue } from '@/types'
+import type { Job, JobApplication, JobDay, JobDayLocation, LocationCheckIn, JobType, JobTypeKpi, JobTypeQuestion, JobTypeQuestionOption, CheckoutResponse, CheckoutResponseValue } from '@/types'
 import { ExportCSVButton } from '@/components/ui/export-csv-button'
 import { JobActions } from '@/components/admin/job-actions'
-import { formatJobStatus, getJobDisplayStatus, getMultiDayDisplayStatus, getJobStatusBadgeVariant, getTimezoneAbbr, parseLocalDate } from '@/lib/utils'
+import { formatJobStatus, getMultiDayDisplayStatus, getJobStatusBadgeVariant, getTimezoneAbbr, parseLocalDate } from '@/lib/utils'
 
 interface ApplicationWithBA extends JobApplication {
   ba_profiles: { id: string; name: string; phone: string; users: { email: string } | null }
@@ -45,12 +45,7 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
     .eq('job_id', id)
     .order('applied_at', { ascending: false })
 
-  const { data: checkIns } = await supabase
-    .from('check_ins')
-    .select('*')
-    .eq('job_id', id)
-
-  // Fetch location check-ins for multi-day jobs
+  // Fetch location check-ins
   const locationIds = (job.job_days || []).flatMap(
     (d: JobDay) => (d.job_day_locations || []).map((l: JobDayLocation) => l.id)
   )
@@ -99,38 +94,21 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
 
   const typedJob = job as Job
   const typedApplications = (applications || []) as ApplicationWithBA[]
-  const typedCheckIns = (checkIns || []) as CheckIn[]
   const approvedApplications = typedApplications.filter(a => a.status === 'approved')
 
-  const isMultiDay = (typedJob.job_days || []).length > 0
-  let displayStatus = isMultiDay
-    ? getMultiDayDisplayStatus(job as import('@/types').JobWithDays)
-    : typedJob.date && typedJob.start_time && typedJob.end_time
-      ? getJobDisplayStatus({ status: typedJob.status, date: typedJob.date, start_time: typedJob.start_time, end_time: typedJob.end_time, timezone: typedJob.timezone })
-      : typedJob.status === 'draft' ? 'draft' : typedJob.status === 'cancelled' ? 'cancelled' : typedJob.status === 'archived' ? 'archived' : 'in_progress'
+  let displayStatus = getMultiDayDisplayStatus(job as import('@/types').JobWithDays)
 
-  // Enhanced completion: if in_progress and all approved BAs have checked out, mark as completed
+  // Enhanced completion: if in_progress and all approved BAs have checked out of final day, mark as completed
   if (displayStatus === 'in_progress' && approvedApplications.length > 0) {
-    if (isMultiDay) {
-      // Multi-day: check if all approved BAs have checked out of ALL locations on the final day
-      const sortedJobDays = [...(typedJob.job_days || [])].sort((a, b) => a.date.localeCompare(b.date))
-      const finalDay = sortedJobDays[sortedJobDays.length - 1]
-      if (finalDay) {
-        const finalDayLocationIds = new Set((finalDay.job_day_locations || []).map((l: JobDayLocation) => l.id))
-        const allComplete = approvedApplications.every(app => {
-          // For each location on the final day, BA must have a check-out
-          return Array.from(finalDayLocationIds).every(locId => {
-            const ci = locationCheckIns.find(c => c.job_day_location_id === locId && c.ba_id === app.ba_id)
-            return ci && ci.check_out_time
-          })
-        })
-        if (allComplete) displayStatus = 'completed'
-      }
-    } else {
-      // Legacy: check if all approved BAs have a check_out_time
+    const sortedJobDays = [...(typedJob.job_days || [])].sort((a, b) => a.date.localeCompare(b.date))
+    const finalDay = sortedJobDays[sortedJobDays.length - 1]
+    if (finalDay) {
+      const finalDayLocationIds = new Set((finalDay.job_day_locations || []).map((l: JobDayLocation) => l.id))
       const allComplete = approvedApplications.every(app => {
-        const ci = typedCheckIns.find(c => c.ba_id === app.ba_id)
-        return ci && ci.check_out_time
+        return Array.from(finalDayLocationIds).every(locId => {
+          const ci = locationCheckIns.find(c => c.job_day_location_id === locId && c.ba_id === app.ba_id)
+          return ci && ci.check_out_time
+        })
       })
       if (allComplete) displayStatus = 'completed'
     }
@@ -218,8 +196,8 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
         </CardContent>
       </Card>
 
-      {/* Schedule Card - Multi-day or Single-day */}
-      {isMultiDay ? (
+      {/* Schedule Card */}
+      {sortedDays.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Schedule ({sortedDays.length} day{sortedDays.length !== 1 ? 's' : ''})</CardTitle>
@@ -260,43 +238,6 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
             </div>
           </CardContent>
         </Card>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Details</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="flex items-center gap-3">
-                <Calendar className="w-5 h-5 text-primary-400 flex-shrink-0" />
-                <div>
-                  <p className="text-sm text-primary-400">Date</p>
-                  <p className="font-medium text-gray-900">
-                    {typedJob.date ? parseLocalDate(typedJob.date).toLocaleDateString() : '—'}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <Clock className="w-5 h-5 text-primary-400 flex-shrink-0" />
-                <div>
-                  <p className="text-sm text-primary-400">Time</p>
-                  <p className="font-medium text-gray-900">
-                    {typedJob.start_time && typedJob.end_time
-                      ? `${typedJob.start_time} - ${typedJob.end_time} ${getTimezoneAbbr(typedJob.timezone)}`
-                      : '—'}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <MapPin className="w-5 h-5 text-primary-400 flex-shrink-0" />
-                <div>
-                  <p className="text-sm text-primary-400">Location</p>
-                  <p className="font-medium text-gray-900">{typedJob.location || '—'}</p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       )}
 
       {/* Description Card */}
@@ -331,8 +272,8 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
         </Card>
       )}
 
-      {/* Location Attendance (for multi-day jobs) */}
-      {isMultiDay && locationCheckIns.length > 0 && (
+      {/* Location Attendance */}
+      {locationCheckIns.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Location Attendance</CardTitle>
@@ -646,7 +587,10 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
                 </thead>
                 <tbody>
                   {approvedApplications.map((app) => {
-                    const checkIn = typedCheckIns.find(c => c.ba_id === app.ba_id)
+                    const baCheckIns = locationCheckIns.filter(c => c.ba_id === app.ba_id && !c.skipped)
+                    const firstCheckIn = baCheckIns.length > 0 ? baCheckIns.reduce((a, b) => a.check_in_time < b.check_in_time ? a : b) : null
+                    const hasCheckedOut = baCheckIns.some(c => c.check_out_time)
+                    const lastCheckOut = baCheckIns.filter(c => c.check_out_time).reduce((a, b) => (a?.check_out_time || '') > (b?.check_out_time || '') ? a : b, null as LocationCheckIn | null)
                     return (
                       <tr key={app.id} className="border-b border-gray-100 hover:bg-gray-50">
                         <td className="py-3 px-4 text-sm">
@@ -655,15 +599,15 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
                           </Link>
                         </td>
                         <td className="py-3 px-4 text-sm text-gray-900">
-                          {checkIn?.check_in_time ? new Date(checkIn.check_in_time).toLocaleTimeString() : '—'}
+                          {firstCheckIn ? new Date(firstCheckIn.check_in_time).toLocaleTimeString() : '—'}
                         </td>
                         <td className="py-3 px-4 text-sm text-gray-900">
-                          {checkIn?.check_out_time ? new Date(checkIn.check_out_time).toLocaleTimeString() : '—'}
+                          {lastCheckOut?.check_out_time ? new Date(lastCheckOut.check_out_time).toLocaleTimeString() : '—'}
                         </td>
                         <td className="py-3 px-4">
-                          {checkIn?.check_out_time ? (
+                          {hasCheckedOut ? (
                             <Badge variant="default">Completed</Badge>
-                          ) : checkIn?.check_in_time ? (
+                          ) : firstCheckIn ? (
                             <Badge variant="success">Checked In</Badge>
                           ) : (
                             <Badge variant="warning">Not Checked In</Badge>

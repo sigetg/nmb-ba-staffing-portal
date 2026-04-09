@@ -65,19 +65,12 @@ class JobCreate(BaseModel):
     title: str
     brand: str
     description: str
-    location: str | None = None
-    latitude: float | None = None
-    longitude: float | None = None
-    date: str | None = None  # YYYY-MM-DD
-    start_time: str | None = None  # HH:MM
-    end_time: str | None = None  # HH:MM
     pay_rate: float
     slots: int
     worksheet_url: str | None = None
     status: JobStatus = JobStatus.DRAFT
     timezone: str | None = None
     job_type_id: str | None = None
-    # Multi-day support
     days: list[dict] | None = None
 
 
@@ -85,27 +78,19 @@ class JobUpdate(BaseModel):
     title: str | None = None
     brand: str | None = None
     description: str | None = None
-    location: str | None = None
-    latitude: float | None = None
-    longitude: float | None = None
-    date: str | None = None
-    start_time: str | None = None
-    end_time: str | None = None
     pay_rate: float | None = None
     slots: int | None = None
     status: JobStatus | None = None
     worksheet_url: str | None = None
     timezone: str | None = None
     job_type_id: str | None = None
-    # Multi-day support
     days: list[dict] | None = None
 
 
 class CheckInRequest(BaseModel):
     latitude: float
     longitude: float
-    # Multi-location support
-    job_day_location_id: str | None = None
+    job_day_location_id: str
     gps_override: bool = False
     gps_override_reason: str | None = None
 
@@ -114,10 +99,8 @@ class CheckOutRequest(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     notes: str | None = None
-    # Multi-location support
-    job_day_location_id: str | None = None
+    job_day_location_id: str
     is_end_of_day: bool = False
-    # Dynamic checkout responses
     checkout_responses: list[CheckoutResponseValueIn] | None = None
 
 
@@ -183,8 +166,6 @@ def _insert_job_days(supabase, job_id: str, days: list[dict], timezone: str):
 async def list_jobs(
     status: JobStatus | None = None,
     brand: str | None = None,
-    date_from: str | None = None,
-    date_to: str | None = None,
     limit: int = Query(20, le=100),
     offset: int = 0,
     current_user: CurrentUser | None = Depends(get_optional_user),
@@ -202,12 +183,8 @@ async def list_jobs(
 
     if brand:
         query = query.ilike("brand", f"%{brand}%")
-    if date_from:
-        query = query.gte("date", date_from)
-    if date_to:
-        query = query.lte("date", date_to)
 
-    query = query.range(offset, offset + limit - 1).order("date", desc=False)
+    query = query.range(offset, offset + limit - 1).order("created_at", desc=True)
 
     result = query.execute()
 
@@ -254,10 +231,10 @@ async def create_job(
     """Create a new job (admin only). Supports optional multi-day structure."""
     supabase = get_supabase_client()
 
-    # Detect timezone from first location if multi-day
-    tz_lat = job.latitude
-    tz_lng = job.longitude
-    if job.days and not tz_lat:
+    # Detect timezone from first location
+    tz_lat = None
+    tz_lng = None
+    if job.days:
         first_loc = job.days[0].get("locations", [{}])[0] if job.days[0].get("locations") else {}
         tz_lat = first_loc.get("latitude")
         tz_lng = first_loc.get("longitude")
@@ -276,22 +253,6 @@ async def create_job(
         "worksheet_url": job.worksheet_url,
         "job_type_id": job.job_type_id,
     }
-
-    # If multi-day, legacy columns are null; otherwise use them
-    if job.days:
-        job_data["location"] = None
-        job_data["latitude"] = None
-        job_data["longitude"] = None
-        job_data["date"] = None
-        job_data["start_time"] = None
-        job_data["end_time"] = None
-    else:
-        job_data["location"] = job.location
-        job_data["latitude"] = job.latitude
-        job_data["longitude"] = job.longitude
-        job_data["date"] = job.date
-        job_data["start_time"] = job.start_time
-        job_data["end_time"] = job.end_time
 
     result = supabase.table("jobs").insert(job_data).execute()
 
@@ -336,12 +297,6 @@ async def update_job(
         "title",
         "brand",
         "description",
-        "location",
-        "latitude",
-        "longitude",
-        "date",
-        "start_time",
-        "end_time",
         "pay_rate",
         "slots",
         "worksheet_url",
@@ -354,24 +309,11 @@ async def update_job(
     if job.status is not None:
         update_data["status"] = job.status.value
 
-    # Auto-detect timezone if lat/lng changed
     if job.timezone is not None:
         update_data["timezone"] = job.timezone
-    elif job.latitude is not None and job.longitude is not None:
-        detected = _tf.timezone_at(lat=job.latitude, lng=job.longitude)
-        if detected:
-            update_data["timezone"] = detected
 
     # Handle multi-day schedule replacement
     if job.days is not None:
-        # Clear legacy columns
-        update_data["location"] = None
-        update_data["latitude"] = None
-        update_data["longitude"] = None
-        update_data["date"] = None
-        update_data["start_time"] = None
-        update_data["end_time"] = None
-
         # Delete existing days (cascade deletes locations)
         supabase.table("job_days").delete().eq("job_id", job_id).execute()
 
@@ -502,23 +444,21 @@ async def apply_to_job(
         raise HTTPException(status_code=500, detail="Failed to submit application")
 
     if current_user.email and current_user.profile:
-        # For multi-day jobs, get location from first day
-        job_location = job.data.get("location") or ""
-        job_date = job.data.get("date") or ""
-        if not job_location:
-            days = (
-                supabase.table("job_days")
-                .select("date, job_day_locations(location)")
-                .eq("job_id", job_id)
-                .order("sort_order")
-                .limit(1)
-                .execute()
-            )
-            if days.data:
-                job_date = days.data[0].get("date", "")
-                locs = days.data[0].get("job_day_locations", [])
-                if locs:
-                    job_location = locs[0].get("location", "")
+        job_location = ""
+        job_date = ""
+        days = (
+            supabase.table("job_days")
+            .select("date, job_day_locations(location)")
+            .eq("job_id", job_id)
+            .order("sort_order")
+            .limit(1)
+            .execute()
+        )
+        if days.data:
+            job_date = days.data[0].get("date", "")
+            locs = days.data[0].get("job_day_locations", [])
+            if locs:
+                job_location = locs[0].get("location", "")
 
         send_application_confirmed_email(
             to_email=current_user.email,
@@ -537,11 +477,7 @@ async def check_in(
     check_in_data: CheckInRequest,
     current_user: CurrentUser = Depends(get_current_ba),
 ):
-    """Check in to a job location with GPS coordinates.
-
-    If job_day_location_id is provided, creates a location_check_ins record.
-    Otherwise falls back to legacy check_ins table.
-    """
+    """Check in to a job location with GPS coordinates."""
     supabase = get_supabase_client()
 
     profile = (
@@ -566,120 +502,62 @@ async def check_in(
     if not application.data or application.data["status"] != "approved":
         raise HTTPException(status_code=403, detail="You are not approved for this job")
 
-    # Multi-location check-in
-    if check_in_data.job_day_location_id:
-        # Verify location belongs to this job
-        location = (
-            supabase.table("job_day_locations")
-            .select("*")
-            .eq("id", check_in_data.job_day_location_id)
-            .eq("job_id", job_id)
-            .single()
-            .execute()
-        )
-
-        if not location.data:
-            raise HTTPException(status_code=404, detail="Location not found for this job")
-
-        # Check for existing check-in at this location
-        existing = (
-            supabase.table("location_check_ins")
-            .select("id")
-            .eq("job_day_location_id", check_in_data.job_day_location_id)
-            .eq("ba_id", ba_id)
-            .single()
-            .execute()
-        )
-
-        if existing.data:
-            raise HTTPException(
-                status_code=400, detail="You have already checked in to this location"
-            )
-
-        # Validate GPS distance
-        distance = None
-        if location.data.get("latitude") and location.data.get("longitude"):
-            distance = calculate_distance(
-                check_in_data.latitude,
-                check_in_data.longitude,
-                float(location.data["latitude"]),
-                float(location.data["longitude"]),
-            )
-
-            if distance > MAX_CHECKIN_DISTANCE_METERS and not check_in_data.gps_override:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"You are too far from the location. Distance: {int(distance)}m (max: {MAX_CHECKIN_DISTANCE_METERS}m). Use GPS override if needed.",
-                )
-
-        # Create location check-in
-        result = (
-            supabase.table("location_check_ins")
-            .insert(
-                {
-                    "job_day_location_id": check_in_data.job_day_location_id,
-                    "ba_id": ba_id,
-                    "check_in_time": datetime.utcnow().isoformat(),
-                    "check_in_latitude": check_in_data.latitude,
-                    "check_in_longitude": check_in_data.longitude,
-                    "check_in_gps_override": check_in_data.gps_override,
-                    "check_in_gps_override_explanation": check_in_data.gps_override_reason,
-                }
-            )
-            .execute()
-        )
-
-        if not result.data:
-            raise HTTPException(status_code=500, detail="Failed to check in")
-
-        return {
-            "message": "Checked in successfully",
-            "check_in_id": result.data[0]["id"],
-            "distance_meters": int(distance) if distance else None,
-            "gps_override": check_in_data.gps_override,
-        }
-
-    # Legacy single-location check-in
-    job = supabase.table("jobs").select("*").eq("id", job_id).single().execute()
-    if not job.data:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    existing_checkin = (
-        supabase.table("check_ins")
-        .select("id")
+    # Verify location belongs to this job
+    location = (
+        supabase.table("job_day_locations")
+        .select("*")
+        .eq("id", check_in_data.job_day_location_id)
         .eq("job_id", job_id)
+        .single()
+        .execute()
+    )
+
+    if not location.data:
+        raise HTTPException(status_code=404, detail="Location not found for this job")
+
+    # Check for existing check-in at this location
+    existing = (
+        supabase.table("location_check_ins")
+        .select("id")
+        .eq("job_day_location_id", check_in_data.job_day_location_id)
         .eq("ba_id", ba_id)
         .single()
         .execute()
     )
 
-    if existing_checkin.data:
-        raise HTTPException(status_code=400, detail="You have already checked in to this job")
+    if existing.data:
+        raise HTTPException(
+            status_code=400, detail="You have already checked in to this location"
+        )
 
+    # Validate GPS distance
     distance = None
-    if job.data.get("latitude") and job.data.get("longitude"):
+    if location.data.get("latitude") and location.data.get("longitude"):
         distance = calculate_distance(
             check_in_data.latitude,
             check_in_data.longitude,
-            job.data["latitude"],
-            job.data["longitude"],
+            float(location.data["latitude"]),
+            float(location.data["longitude"]),
         )
 
         if distance > MAX_CHECKIN_DISTANCE_METERS and not check_in_data.gps_override:
             raise HTTPException(
                 status_code=400,
-                detail=f"You are too far from the job location. Distance: {int(distance)}m (max: {MAX_CHECKIN_DISTANCE_METERS}m)",
+                detail=f"You are too far from the location. Distance: {int(distance)}m (max: {MAX_CHECKIN_DISTANCE_METERS}m). Use GPS override if needed.",
             )
 
+    # Create location check-in
     result = (
-        supabase.table("check_ins")
+        supabase.table("location_check_ins")
         .insert(
             {
-                "job_id": job_id,
+                "job_day_location_id": check_in_data.job_day_location_id,
                 "ba_id": ba_id,
                 "check_in_time": datetime.utcnow().isoformat(),
                 "check_in_latitude": check_in_data.latitude,
                 "check_in_longitude": check_in_data.longitude,
+                "check_in_gps_override": check_in_data.gps_override,
+                "check_in_gps_override_explanation": check_in_data.gps_override_reason,
             }
         )
         .execute()
@@ -692,6 +570,7 @@ async def check_in(
         "message": "Checked in successfully",
         "check_in_id": result.data[0]["id"],
         "distance_meters": int(distance) if distance else None,
+        "gps_override": check_in_data.gps_override,
     }
 
 
@@ -703,7 +582,6 @@ async def check_out(
 ):
     """Check out from a job location.
 
-    If job_day_location_id is provided, uses location_check_ins.
     Mid-day departure: only records time + GPS, creates travel log.
     End-of-day: records full survey data.
     """
@@ -718,127 +596,35 @@ async def check_out(
 
     ba_id = profile.data["id"]
 
-    # Multi-location check-out
-    if check_out_data.job_day_location_id:
-        checkin = (
-            supabase.table("location_check_ins")
-            .select("*")
-            .eq("job_day_location_id", check_out_data.job_day_location_id)
-            .eq("ba_id", ba_id)
-            .single()
-            .execute()
-        )
-
-        if not checkin.data:
-            raise HTTPException(status_code=400, detail="You have not checked in to this location")
-
-        if checkin.data.get("check_out_time"):
-            raise HTTPException(
-                status_code=400, detail="You have already checked out from this location"
-            )
-
-        now = datetime.utcnow().isoformat()
-
-        update_data = {
-            "check_out_time": now,
-            "check_out_latitude": check_out_data.latitude,
-            "check_out_longitude": check_out_data.longitude,
-            "is_end_of_day": check_out_data.is_end_of_day,
-        }
-
-        result = (
-            supabase.table("location_check_ins")
-            .update(update_data)
-            .eq("id", checkin.data["id"])
-            .execute()
-        )
-
-        if not result.data:
-            raise HTTPException(status_code=500, detail="Failed to check out")
-
-        # Store dynamic checkout responses for end-of-day
-        if check_out_data.is_end_of_day and check_out_data.checkout_responses:
-            resp_result = (
-                supabase.table("checkout_responses")
-                .insert(
-                    {
-                        "job_id": job_id,
-                        "ba_id": ba_id,
-                        "location_check_in_id": checkin.data["id"],
-                    }
-                )
-                .execute()
-            )
-            if resp_result.data:
-                resp_id = resp_result.data[0]["id"]
-                for val in check_out_data.checkout_responses:
-                    val_data = {"checkout_response_id": resp_id}
-                    if val.kpi_id:
-                        val_data["kpi_id"] = val.kpi_id
-                    if val.question_id:
-                        val_data["question_id"] = val.question_id
-                    if val.numeric_value is not None:
-                        val_data["numeric_value"] = val.numeric_value
-                    if val.text_value is not None:
-                        val_data["text_value"] = val.text_value
-                    if val.option_id:
-                        val_data["option_id"] = val.option_id
-                    supabase.table("checkout_response_values").insert(val_data).execute()
-
-        # Create travel log for mid-day departures
-        travel_log_id = None
-        if not check_out_data.is_end_of_day:
-            travel_result = (
-                supabase.table("travel_logs")
-                .insert(
-                    {
-                        "ba_id": ba_id,
-                        "from_location_check_in_id": checkin.data["id"],
-                        "departure_time": now,
-                    }
-                )
-                .execute()
-            )
-            if travel_result.data:
-                travel_log_id = travel_result.data[0]["id"]
-
-        # Calculate hours worked at this location
-        check_in_time = datetime.fromisoformat(checkin.data["check_in_time"].replace("Z", "+00:00"))
-        check_out_time = datetime.utcnow()
-        hours_worked = (check_out_time - check_in_time).total_seconds() / 3600
-
-        return {
-            "message": "Checked out successfully",
-            "hours_worked": round(hours_worked, 2),
-            "is_end_of_day": check_out_data.is_end_of_day,
-            "travel_log_id": travel_log_id,
-        }
-
-    # Legacy single-location check-out
     checkin = (
-        supabase.table("check_ins")
+        supabase.table("location_check_ins")
         .select("*")
-        .eq("job_id", job_id)
+        .eq("job_day_location_id", check_out_data.job_day_location_id)
         .eq("ba_id", ba_id)
         .single()
         .execute()
     )
 
     if not checkin.data:
-        raise HTTPException(status_code=400, detail="You have not checked in to this job")
+        raise HTTPException(status_code=400, detail="You have not checked in to this location")
 
     if checkin.data.get("check_out_time"):
-        raise HTTPException(status_code=400, detail="You have already checked out from this job")
+        raise HTTPException(
+            status_code=400, detail="You have already checked out from this location"
+        )
+
+    now = datetime.utcnow().isoformat()
+
+    update_data = {
+        "check_out_time": now,
+        "check_out_latitude": check_out_data.latitude,
+        "check_out_longitude": check_out_data.longitude,
+        "is_end_of_day": check_out_data.is_end_of_day,
+    }
 
     result = (
-        supabase.table("check_ins")
-        .update(
-            {
-                "check_out_time": datetime.utcnow().isoformat(),
-                "check_out_latitude": check_out_data.latitude,
-                "check_out_longitude": check_out_data.longitude,
-            }
-        )
+        supabase.table("location_check_ins")
+        .update(update_data)
         .eq("id", checkin.data["id"])
         .execute()
     )
@@ -846,15 +632,15 @@ async def check_out(
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to check out")
 
-    # Store dynamic checkout responses for legacy checkout
-    if check_out_data.checkout_responses:
+    # Store dynamic checkout responses for end-of-day
+    if check_out_data.is_end_of_day and check_out_data.checkout_responses:
         resp_result = (
             supabase.table("checkout_responses")
             .insert(
                 {
                     "job_id": job_id,
                     "ba_id": ba_id,
-                    "check_in_id": checkin.data["id"],
+                    "location_check_in_id": checkin.data["id"],
                 }
             )
             .execute()
@@ -875,6 +661,24 @@ async def check_out(
                     val_data["option_id"] = val.option_id
                 supabase.table("checkout_response_values").insert(val_data).execute()
 
+    # Create travel log for mid-day departures
+    travel_log_id = None
+    if not check_out_data.is_end_of_day:
+        travel_result = (
+            supabase.table("travel_logs")
+            .insert(
+                {
+                    "ba_id": ba_id,
+                    "from_location_check_in_id": checkin.data["id"],
+                    "departure_time": now,
+                }
+            )
+            .execute()
+        )
+        if travel_result.data:
+            travel_log_id = travel_result.data[0]["id"]
+
+    # Calculate hours worked at this location
     check_in_time = datetime.fromisoformat(checkin.data["check_in_time"].replace("Z", "+00:00"))
     check_out_time = datetime.utcnow()
     hours_worked = (check_out_time - check_in_time).total_seconds() / 3600
@@ -882,6 +686,8 @@ async def check_out(
     return {
         "message": "Checked out successfully",
         "hours_worked": round(hours_worked, 2),
+        "is_end_of_day": check_out_data.is_end_of_day,
+        "travel_log_id": travel_log_id,
     }
 
 

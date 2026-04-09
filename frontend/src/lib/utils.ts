@@ -56,44 +56,14 @@ export function getNowInTimezone(timezone: string): { date: string; time: string
   }
 }
 
-/** Compute display status for a published job based on current time in job's timezone */
-export function getJobDisplayStatus(job: {
-  status: string
-  date: string
-  start_time: string
-  end_time: string
-  timezone: string
-}): DisplayJobStatus {
-  if (job.status === 'draft') return 'draft'
-  if (job.status === 'cancelled') return 'cancelled'
-  if (job.status === 'archived') return 'archived'
-
-  // job.status === 'published' — compute from time
-  const { date: nowDate, time: nowTime } = getNowInTimezone(job.timezone)
-
-  if (job.date > nowDate) return 'upcoming'
-  if (job.date < nowDate) return 'completed'
-
-  // Same day: compare times (HH:MM strings are lexicographically sortable)
-  if (nowTime < job.start_time) return 'upcoming'
-  if (nowTime > job.end_time) return 'completed'
-  return 'in_progress'
-}
-
-/** Compute display status for a multi-day job based on job_days date range */
+/** Compute display status for a job based on job_days date range */
 export function getMultiDayDisplayStatus(job: JobWithDays): DisplayJobStatus {
   if (job.status === 'draft') return 'draft'
   if (job.status === 'cancelled') return 'cancelled'
   if (job.status === 'archived') return 'archived'
 
   const days = (job.job_days || []).sort((a, b) => a.date.localeCompare(b.date))
-  if (days.length === 0) {
-    // Fallback for jobs with no days at all
-    if (job.date && job.start_time && job.end_time && job.timezone) {
-      return getJobDisplayStatus({ status: job.status, date: job.date, start_time: job.start_time, end_time: job.end_time, timezone: job.timezone })
-    }
-    return 'upcoming'
-  }
+  if (days.length === 0) return 'upcoming'
 
   const today = getLocalToday()
   const firstDate = days[0].date
@@ -107,9 +77,7 @@ export function getMultiDayDisplayStatus(job: JobWithDays): DisplayJobStatus {
 /** Get formatted date display for a job (single date or range) */
 export function getJobDateDisplay(job: JobWithDays): string {
   const days = (job.job_days || []).sort((a, b) => a.date.localeCompare(b.date))
-  if (days.length === 0) {
-    return job.date ? parseLocalDate(job.date).toLocaleDateString() : 'No date'
-  }
+  if (days.length === 0) return 'No date'
   if (days.length === 1) {
     return parseLocalDate(days[0].date).toLocaleDateString()
   }
@@ -119,15 +87,13 @@ export function getJobDateDisplay(job: JobWithDays): string {
 /** Get location display for a job (single or "Location +N more") */
 export function getJobLocationDisplay(job: JobWithDays): string {
   const days = job.job_days || []
-  if (days.length === 0) return job.location || ''
-
   const locations = new Set<string>()
   for (const day of days) {
     for (const loc of (day.job_day_locations || [])) {
       locations.add(loc.location)
     }
   }
-  if (locations.size === 0) return job.location || ''
+  if (locations.size === 0) return ''
   if (locations.size === 1) return [...locations][0]
   return `${[...locations][0]} +${locations.size - 1} more`
 }

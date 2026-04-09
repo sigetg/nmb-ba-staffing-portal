@@ -11,6 +11,7 @@ import { DayLocationTimeline } from '@/components/worker/day-location-timeline'
 import { uploadJobPhoto } from '@/lib/api'
 import type { JobDayLocation, LocationCheckIn } from '@/types'
 import { getImpersonatedBAId } from '@/lib/impersonation'
+import { getLocalToday } from '@/lib/utils'
 
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371000
@@ -71,6 +72,13 @@ export default function LocationCheckInPage({ params }: { params: Promise<{ id: 
       // Load job title
       const { data: job } = await supabase.from('jobs').select('title').eq('id', jobId).single()
       if (job) setJobTitle(job.title)
+
+      // Validate day date matches today
+      const { data: dayData } = await supabase.from('job_days').select('date').eq('id', dayId).single()
+      if (!dayData || dayData.date !== getLocalToday()) {
+        router.push(`/dashboard/jobs/${jobId}`)
+        return
+      }
 
       // Load this location
       const { data: loc } = await supabase.from('job_day_locations').select('*').eq('id', locationId).single()

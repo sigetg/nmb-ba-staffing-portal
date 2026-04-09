@@ -9,7 +9,7 @@ import { ChevronLeft, FileText, Plus, Trash2, ChevronUp, ChevronDown, Calendar, 
 import { JobActions } from '@/components/admin/job-actions'
 import { getMultiDayDisplayStatus } from '@/lib/utils'
 import { uploadJobWorksheet, deleteJobWorksheet } from '@/lib/api'
-import type { Job, JobDay, JobDayLocation, JobStatus, DisplayJobStatus, JobWithDays } from '@/types'
+import type { JobDay, JobDayLocation, JobStatus, JobWithDays } from '@/types'
 
 const statusOptions = [
   { value: 'draft', label: 'Draft' },
@@ -66,15 +66,6 @@ export default function EditJobPage({ params }: { params: Promise<{ id: string }
   const [days, setDays] = useState<EditDay[]>([])
   const [activeDayIdx, setActiveDayIdx] = useState(0)
   const [dateInput, setDateInput] = useState('')
-  const [isMultiDay, setIsMultiDay] = useState(false)
-
-  // Legacy single-day fields
-  const [legacyLocation, setLegacyLocation] = useState('')
-  const [legacyLatitude, setLegacyLatitude] = useState<number | null>(null)
-  const [legacyLongitude, setLegacyLongitude] = useState<number | null>(null)
-  const [legacyDate, setLegacyDate] = useState('')
-  const [legacyStartTime, setLegacyStartTime] = useState('')
-  const [legacyEndTime, setLegacyEndTime] = useState('')
 
   const router = useRouter()
   const supabase = createClient()
@@ -112,36 +103,25 @@ export default function EditJobPage({ params }: { params: Promise<{ id: string }
       setTimezone(job.timezone || '')
       setJobTypeId(job.job_type_id || '')
 
-      // Check if multi-day
+      // Load schedule days
       const jobDays = (job.job_days || []) as JobDay[]
-      if (jobDays.length > 0) {
-        setIsMultiDay(true)
-        const sortedDays = [...jobDays].sort((a, b) => a.sort_order - b.sort_order)
-        setDays(sortedDays.map(d => ({
-          id: d.id,
-          date: d.date,
-          sort_order: d.sort_order,
-          locations: ((d.job_day_locations || []) as JobDayLocation[])
-            .sort((a, b) => a.sort_order - b.sort_order)
-            .map(l => ({
-              id: l.id,
-              location: l.location,
-              latitude: l.latitude ?? null,
-              longitude: l.longitude ?? null,
-              start_time: l.start_time,
-              end_time: l.end_time,
-              sort_order: l.sort_order,
-            })),
-        })))
-      } else {
-        setIsMultiDay(false)
-        setLegacyLocation(job.location || '')
-        setLegacyLatitude(job.latitude ?? null)
-        setLegacyLongitude(job.longitude ?? null)
-        setLegacyDate(job.date || '')
-        setLegacyStartTime(job.start_time || '')
-        setLegacyEndTime(job.end_time || '')
-      }
+      const sortedDays = [...jobDays].sort((a, b) => a.sort_order - b.sort_order)
+      setDays(sortedDays.map(d => ({
+        id: d.id,
+        date: d.date,
+        sort_order: d.sort_order,
+        locations: ((d.job_day_locations || []) as JobDayLocation[])
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map(l => ({
+            id: l.id,
+            location: l.location,
+            latitude: l.latitude ?? null,
+            longitude: l.longitude ?? null,
+            start_time: l.start_time,
+            end_time: l.end_time,
+            sort_order: l.sort_order,
+          })),
+      })))
     } catch {
       setError('Failed to load job')
     } finally {
@@ -233,14 +213,12 @@ export default function EditJobPage({ params }: { params: Promise<{ id: string }
       return
     }
 
-    if (isMultiDay) {
-      if (days.length === 0) { setError('Add at least one day'); return }
-      for (const d of days) {
-        if (d.locations.length === 0) { setError(`Day ${d.date} needs at least one location`); return }
-        for (const l of d.locations) {
-          if (!l.location.trim() || !l.start_time || !l.end_time) {
-            setError(`All locations need address, start time, and end time`); return
-          }
+    if (days.length === 0) { setError('Add at least one day'); return }
+    for (const d of days) {
+      if (d.locations.length === 0) { setError(`Day ${d.date} needs at least one location`); return }
+      for (const l of d.locations) {
+        if (!l.location.trim() || !l.start_time || !l.end_time) {
+          setError(`All locations need address, start time, and end time`); return
         }
       }
     }
@@ -282,27 +260,11 @@ export default function EditJobPage({ params }: { params: Promise<{ id: string }
         updated_at: new Date().toISOString(),
       }
 
-      if (isMultiDay) {
-        jobUpdate.location = null
-        jobUpdate.latitude = null
-        jobUpdate.longitude = null
-        jobUpdate.date = null
-        jobUpdate.start_time = null
-        jobUpdate.end_time = null
-      } else {
-        jobUpdate.location = legacyLocation.trim()
-        jobUpdate.latitude = legacyLatitude
-        jobUpdate.longitude = legacyLongitude
-        jobUpdate.date = legacyDate
-        jobUpdate.start_time = legacyStartTime
-        jobUpdate.end_time = legacyEndTime
-      }
-
       const { error: updateError } = await supabase.from('jobs').update(jobUpdate).eq('id', id)
       if (updateError) { setError(updateError.message); return }
 
-      // Update schedule if multi-day (full replace)
-      if (isMultiDay) {
+      // Update schedule (full replace)
+      {
         // Delete existing days (cascade deletes locations)
         await supabase.from('job_days').delete().eq('job_id', id)
 
@@ -469,51 +431,6 @@ export default function EditJobPage({ params }: { params: Promise<{ id: string }
 
         {activeTab === 'schedule' && (
           <div className="space-y-4">
-            {/* Mode toggle */}
-            <Card>
-              <CardContent className="py-4">
-                <div className="flex items-center gap-4">
-                  <span className="text-sm font-medium text-gray-700">Schedule type:</span>
-                  <button
-                    type="button"
-                    onClick={() => setIsMultiDay(false)}
-                    className={`px-3 py-1 text-sm rounded-full ${!isMultiDay ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-500'}`}
-                  >
-                    Single Day
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsMultiDay(true)}
-                    className={`px-3 py-1 text-sm rounded-full ${isMultiDay ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-500'}`}
-                  >
-                    Multi-Day
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {!isMultiDay ? (
-              /* Legacy single-day editor */
-              <Card>
-                <CardHeader><CardTitle>Date, Time & Location</CardTitle></CardHeader>
-                <CardContent className="space-y-4">
-                  <AddressAutocomplete
-                    label="Location"
-                    value={legacyLocation}
-                    onChange={(val) => { setLegacyLocation(val); setLegacyLatitude(null); setLegacyLongitude(null) }}
-                    onPlaceSelect={(place) => { setLegacyLocation(place.address); setLegacyLatitude(place.latitude); setLegacyLongitude(place.longitude) }}
-                    helperText={legacyLatitude != null && legacyLongitude != null ? `GPS: ${legacyLatitude.toFixed(4)}, ${legacyLongitude.toFixed(4)}` : undefined}
-                  />
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <Input label="Date" type="date" value={legacyDate} onChange={(e) => setLegacyDate(e.target.value)} />
-                    <Input label="Start Time" type="time" value={legacyStartTime} onChange={(e) => setLegacyStartTime(e.target.value)} />
-                    <Input label="End Time" type="time" value={legacyEndTime} onChange={(e) => setLegacyEndTime(e.target.value)} />
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              /* Multi-day schedule editor */
-              <div className="space-y-4">
                 {/* Add day */}
                 <Card>
                   <CardContent className="py-4">
@@ -613,8 +530,6 @@ export default function EditJobPage({ params }: { params: Promise<{ id: string }
                     </CardContent>
                   </Card>
                 )}
-              </div>
-            )}
           </div>
         )}
 
@@ -627,15 +542,12 @@ export default function EditJobPage({ params }: { params: Promise<{ id: string }
               jobId={id}
               jobStatus={status as JobStatus}
               displayStatus={
-                isMultiDay
-                  ? getMultiDayDisplayStatus({
-                      id, title, brand, date: legacyDate || null, start_time: legacyStartTime || null,
-                      end_time: legacyEndTime || null, location: legacyLocation || null,
-                      pay_rate: parseFloat(payRate) || 0, slots: parseInt(slots) || 0,
-                      slots_filled: 0, status, timezone,
-                      job_days: days.map(d => ({ id: d.id, job_id: id, date: d.date, sort_order: d.sort_order, created_at: '', job_day_locations: d.locations.map(l => ({ id: l.id, job_day_id: d.id, job_id: id, location: l.location, latitude: l.latitude, longitude: l.longitude, start_time: l.start_time, end_time: l.end_time, sort_order: l.sort_order, created_at: '' })) })),
-                    } as JobWithDays)
-                  : (status === 'draft' ? 'draft' : status === 'cancelled' ? 'cancelled' : status === 'archived' ? 'archived' : 'completed') as DisplayJobStatus
+                getMultiDayDisplayStatus({
+                  id, title, brand,
+                  pay_rate: parseFloat(payRate) || 0, slots: parseInt(slots) || 0,
+                  slots_filled: 0, status, timezone,
+                  job_days: days.map(d => ({ id: d.id, job_id: id, date: d.date, sort_order: d.sort_order, created_at: '', job_day_locations: d.locations.map(l => ({ id: l.id, job_day_id: d.id, job_id: id, location: l.location, latitude: l.latitude, longitude: l.longitude, start_time: l.start_time, end_time: l.end_time, sort_order: l.sort_order, created_at: '' })) })),
+                } as JobWithDays)
               }
               jobTitle={title}
               variant="button"

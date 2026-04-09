@@ -7,11 +7,11 @@ import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge, Alert, Avatar, Textarea } from '@/components/ui'
 import { ChevronLeft, Check, X, FileText, Save, Eye } from 'lucide-react'
 import { startImpersonation } from '@/lib/actions/impersonation'
-import type { BAProfile, BAPhoto, Job, JobApplication } from '@/types'
-import { formatJobStatus, getJobDisplayStatus, getJobStatusBadgeVariant, parseLocalDate } from '@/lib/utils'
+import type { BAProfile, BAPhoto, JobApplication, JobWithDays } from '@/types'
+import { formatJobStatus, getMultiDayDisplayStatus, getJobStatusBadgeVariant, getJobDateDisplay } from '@/lib/utils'
 
 interface AssignedJob extends JobApplication {
-  jobs: Job
+  jobs: JobWithDays
 }
 
 const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -67,7 +67,7 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
       // Get assigned jobs (approved applications)
       const { data: assignedData } = await supabase
         .from('job_applications')
-        .select('*, jobs(*)')
+        .select('*, jobs(*, job_days(*, job_day_locations(*)))')
         .eq('ba_id', id)
         .eq('status', 'approved')
 
@@ -493,9 +493,7 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
                 </thead>
                 <tbody>
                   {assignedJobs.map((aj) => {
-                    const jobDisplayStatus = aj.jobs.date && aj.jobs.start_time && aj.jobs.end_time
-                      ? getJobDisplayStatus({ status: aj.jobs.status, date: aj.jobs.date, start_time: aj.jobs.start_time, end_time: aj.jobs.end_time, timezone: aj.jobs.timezone })
-                      : aj.jobs.status === 'draft' ? 'draft' : aj.jobs.status === 'cancelled' ? 'cancelled' : 'in_progress'
+                    const jobDisplayStatus = getMultiDayDisplayStatus(aj.jobs)
                     return (
                     <tr key={aj.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="py-3 px-4 text-sm">
@@ -508,7 +506,7 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
                       </td>
                       <td className="py-3 px-4 text-sm text-gray-900">{aj.jobs.brand}</td>
                       <td className="py-3 px-4 text-sm text-gray-900">
-                        {aj.jobs.date ? parseLocalDate(aj.jobs.date).toLocaleDateString() : 'Multi-day'}
+                        {getJobDateDisplay(aj.jobs)}
                       </td>
                       <td className="py-3 px-4 text-sm text-gray-900">${aj.jobs.pay_rate}/hr</td>
                       <td className="py-3 px-4">

@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge, Alert, Avatar, Textarea } from '@/components/ui'
 import { ChevronLeft, Check, X, Calendar, DollarSign, FileText } from 'lucide-react'
-import { parseLocalDate } from '@/lib/utils'
+import { getJobDateDisplay } from '@/lib/utils'
 import type { JobApplication, Job, BAProfile, BAPhoto } from '@/types'
 
 interface ApplicationWithRelations extends JobApplication {
@@ -36,7 +36,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
     try {
       const { data, error: fetchError } = await supabase
         .from('job_applications')
-        .select('*, ba_profiles(*, ba_photos(*), users(email)), jobs(*)')
+        .select('*, ba_profiles(*, ba_photos(*), users(email)), jobs(*, job_days(*, job_day_locations(*)))')
         .eq('id', id)
         .single()
 
@@ -184,7 +184,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
             <div className="flex items-center gap-4 text-sm text-primary-400">
               <span className="flex items-center gap-1">
                 <Calendar className="w-4 h-4" />
-                {job.date ? parseLocalDate(job.date).toLocaleDateString() : 'Multi-day'}
+                {getJobDateDisplay(job as import('@/types').JobWithDays)}
               </span>
               <span className="flex items-center gap-1">
                 <DollarSign className="w-4 h-4" />
