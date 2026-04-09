@@ -1,9 +1,17 @@
 import { NextResponse } from 'next/server'
+import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
+
+  // Use forwarded host/proto headers to get the real origin behind reverse proxies (e.g. Railway)
+  const headersList = await headers()
+  const forwardedHost = headersList.get('x-forwarded-host')
+  const forwardedProto = headersList.get('x-forwarded-proto') ?? 'https'
+  const host = forwardedHost ?? headersList.get('host') ?? 'localhost:3000'
+  const origin = `${forwardedProto}://${host}`
 
   if (!code) {
     return NextResponse.redirect(new URL('/?error=auth_error', origin))
