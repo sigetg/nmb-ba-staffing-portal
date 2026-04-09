@@ -9,7 +9,7 @@ import { ChevronLeft, FileText, Plus, Trash2, ChevronUp, ChevronDown, Calendar, 
 import { JobActions } from '@/components/admin/job-actions'
 import { getMultiDayDisplayStatus } from '@/lib/utils'
 import { uploadJobWorksheet, deleteJobWorksheet } from '@/lib/api'
-import type { Job, JobDay, JobDayLocation, JobStatus, DisplayJobStatus, JobWithDays, JobType } from '@/types'
+import type { Job, JobDay, JobDayLocation, JobStatus, DisplayJobStatus, JobWithDays } from '@/types'
 
 const statusOptions = [
   { value: 'draft', label: 'Draft' },
@@ -60,7 +60,7 @@ export default function EditJobPage({ params }: { params: Promise<{ id: string }
   const [status, setStatus] = useState('draft')
   const [timezone, setTimezone] = useState('')
   const [jobTypeId, setJobTypeId] = useState('')
-  const [jobTypes, setJobTypes] = useState<JobType[]>([])
+  const [jobTypes, setJobTypes] = useState<{ id: string; name: string }[]>([])
 
   // Schedule state
   const [days, setDays] = useState<EditDay[]>([])

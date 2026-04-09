@@ -192,7 +192,7 @@ export default function CheckOutPage({ params }: { params: Promise<{ id: string 
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) { setError('Not authenticated'); return }
 
-      const { url } = await uploadJobPhoto(session.access_token, file, id, 'check_out')
+      const { url } = await uploadJobPhoto(session.access_token, file, id, 'check_out', undefined, profileId!)
       setCheckOutPhoto(url)
     } catch {
       setError('Failed to upload photo')

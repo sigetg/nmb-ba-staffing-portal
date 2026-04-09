@@ -2,8 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle, Badge } from '@/components/ui'
-import { ChevronLeft, Calendar, Clock, MapPin, FileText, Pencil } from 'lucide-react'
-import type { Job, JobApplication, CheckIn, JobDay, JobDayLocation, LocationCheckIn } from '@/types'
+import { ChevronLeft, Calendar, Clock, MapPin, FileText, Pencil, FileBarChart } from 'lucide-react'
+import type { Job, JobApplication, CheckIn, JobDay, JobDayLocation, LocationCheckIn, JobType, JobTypeKpi, JobTypeQuestion, JobTypeQuestionOption, CheckoutResponse, CheckoutResponseValue } from '@/types'
 import { ExportCSVButton } from '@/components/ui/export-csv-button'
 import { JobActions } from '@/components/admin/job-actions'
 import { formatJobStatus, getJobDisplayStatus, getMultiDayDisplayStatus, getJobStatusBadgeVariant, getTimezoneAbbr, parseLocalDate } from '@/lib/utils'
@@ -69,6 +69,34 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
     .select('*')
     .eq('job_id', id)
 
+  // Fetch job type with KPIs and questions for reporting
+  let jobType: JobType | null = null
+  if (job.job_type_id) {
+    const { data: jt } = await supabase
+      .from('job_types')
+      .select('*, job_type_kpis(*), job_type_questions(*, job_type_question_options(*))')
+      .eq('id', job.job_type_id)
+      .single()
+    if (jt) {
+      if (jt.job_type_kpis) jt.job_type_kpis.sort((a: JobTypeKpi, b: JobTypeKpi) => a.sort_order - b.sort_order)
+      if (jt.job_type_questions) {
+        jt.job_type_questions.sort((a: JobTypeQuestion, b: JobTypeQuestion) => a.sort_order - b.sort_order)
+        for (const q of jt.job_type_questions) {
+          if (q.job_type_question_options) q.job_type_question_options.sort((a: JobTypeQuestionOption, b: JobTypeQuestionOption) => a.sort_order - b.sort_order)
+        }
+      }
+      jobType = jt as JobType
+    }
+  }
+
+  // Fetch checkout responses with values
+  const { data: checkoutResponses } = await supabase
+    .from('checkout_responses')
+    .select('*, checkout_response_values(*), ba_profiles(id, name)')
+    .eq('job_id', id)
+
+  const typedCheckoutResponses = (checkoutResponses || []) as (CheckoutResponse & { ba_profiles: { id: string; name: string } })[]
+
   const typedJob = job as Job
   const typedApplications = (applications || []) as ApplicationWithBA[]
   const typedCheckIns = (checkIns || []) as CheckIn[]
@@ -110,6 +138,15 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
           <h1 className="text-2xl font-bold text-heading">Job Details</h1>
         </div>
         <div className="flex items-center gap-2">
+          {typedCheckoutResponses.length > 0 && (
+            <Link
+              href={`/admin/reports/preview?jobs=${id}`}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors inline-flex items-center gap-2"
+            >
+              <FileBarChart className="w-4 h-4" />
+              Export Report
+            </Link>
+          )}
           <JobActions
             jobId={id}
             jobStatus={typedJob.status}
@@ -327,6 +364,177 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
           </CardContent>
         </Card>
       )}
+
+      {/* KPI Summary & Per-BA Responses */}
+      {jobType && typedCheckoutResponses.length > 0 && (() => {
+        const kpis = jobType.job_type_kpis || []
+        const questions = jobType.job_type_questions || []
+        const mcQuestions = questions.filter(q => q.question_type === 'multiple_choice')
+        const textQuestions = questions.filter(q => q.question_type === 'free_text')
+
+        // Build per-BA map: baId -> { name, values[] }
+        const baMap = new Map<string, { name: string; values: CheckoutResponseValue[] }>()
+        for (const resp of typedCheckoutResponses) {
+          const existing = baMap.get(resp.ba_id)
+          const vals = resp.checkout_response_values || []
+          if (existing) {
+            existing.values.push(...vals)
+          } else {
+            baMap.set(resp.ba_id, { name: resp.ba_profiles?.name || 'Unknown', values: vals })
+          }
+        }
+        const baEntries = Array.from(baMap.entries())
+
+        // Aggregate KPI data
+        const kpiAggregates = kpis.map(kpi => {
+          const allValues = typedCheckoutResponses.flatMap(r =>
+            (r.checkout_response_values || []).filter(v => v.kpi_id === kpi.id && v.numeric_value != null)
+          )
+          const sum = allValues.reduce((acc, v) => acc + (v.numeric_value || 0), 0)
+          const avg = allValues.length > 0 ? sum / allValues.length : 0
+          return { kpi, sum, avg, count: allValues.length }
+        })
+
+        // Aggregate MC question data
+        const mcAggregates = mcQuestions.map(q => {
+          const allValues = typedCheckoutResponses.flatMap(r =>
+            (r.checkout_response_values || []).filter(v => v.question_id === q.id && v.option_id)
+          )
+          const total = allValues.length
+          const options = (q.job_type_question_options || []).map(opt => {
+            const count = allValues.filter(v => v.option_id === opt.id).length
+            return { label: opt.label, count, pct: total > 0 ? Math.round((count / total) * 100) : 0 }
+          })
+          return { question: q, options, total }
+        })
+
+        return (
+          <>
+            {/* KPI Summary */}
+            <Card>
+              <CardHeader>
+                <CardTitle>KPI Summary ({jobType.name})</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  {/* Numeric KPIs */}
+                  {kpiAggregates.length > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                      {kpiAggregates.map(({ kpi, sum, avg, count }) => (
+                        <div key={kpi.id} className="bg-gray-50 rounded-lg p-4 text-center">
+                          <p className="text-xs text-primary-400 uppercase tracking-wide mb-1">{kpi.label}</p>
+                          <p className="text-2xl font-bold text-gray-900">
+                            {kpi.aggregation === 'avg' ? avg.toFixed(1) : sum}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {kpi.aggregation === 'sum' ? `Total (avg ${avg.toFixed(1)}/BA)` : `Avg across ${count} responses`}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* MC Question Breakdowns */}
+                  {mcAggregates.map(({ question, options, total }) => (
+                    <div key={question.id}>
+                      <p className="text-sm font-medium text-gray-700 mb-2">{question.question_text}</p>
+                      <div className="space-y-1.5">
+                        {options.map((opt) => (
+                          <div key={opt.label} className="flex items-center gap-3">
+                            <div className="flex-1">
+                              <div className="flex justify-between text-xs mb-0.5">
+                                <span className="text-gray-600">{opt.label}</span>
+                                <span className="text-gray-400">{opt.count}/{total} ({opt.pct}%)</span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div className="bg-primary-400 h-2 rounded-full" style={{ width: `${opt.pct}%` }} />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Free-text responses */}
+                  {textQuestions.map(q => {
+                    const answers = baEntries
+                      .map(([, ba]) => {
+                        const val = ba.values.find(v => v.question_id === q.id && v.text_value)
+                        return val ? { name: ba.name, text: val.text_value! } : null
+                      })
+                      .filter(Boolean) as { name: string; text: string }[]
+                    if (answers.length === 0) return null
+                    return (
+                      <div key={q.id}>
+                        <p className="text-sm font-medium text-gray-700 mb-2">{q.question_text}</p>
+                        <div className="space-y-2">
+                          {answers.map((a, i) => (
+                            <div key={i} className="bg-gray-50 rounded-lg p-3">
+                              <p className="text-xs font-medium text-primary-400 mb-1">{a.name}</p>
+                              <p className="text-sm text-gray-700">{a.text}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Per-BA Response Table */}
+            {(kpis.length > 0 || mcQuestions.length > 0) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Per-BA Responses</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-gray-200 bg-gray-50">
+                          <th className="text-left py-3 px-4 text-sm font-medium text-primary-400">BA Name</th>
+                          {kpis.map(kpi => (
+                            <th key={kpi.id} className="text-left py-3 px-4 text-sm font-medium text-primary-400">{kpi.label}</th>
+                          ))}
+                          {mcQuestions.map(q => (
+                            <th key={q.id} className="text-left py-3 px-4 text-sm font-medium text-primary-400">{q.question_text}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {baEntries.map(([baId, ba]) => (
+                          <tr key={baId} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="py-2 px-4 text-sm font-medium text-gray-900">{ba.name}</td>
+                            {kpis.map(kpi => {
+                              const val = ba.values.find(v => v.kpi_id === kpi.id)
+                              return (
+                                <td key={kpi.id} className="py-2 px-4 text-sm text-gray-700">
+                                  {val?.numeric_value != null ? val.numeric_value : '\u2014'}
+                                </td>
+                              )
+                            })}
+                            {mcQuestions.map(q => {
+                              const val = ba.values.find(v => v.question_id === q.id && v.option_id)
+                              const opt = val ? (q.job_type_question_options || []).find(o => o.id === val.option_id) : null
+                              return (
+                                <td key={q.id} className="py-2 px-4 text-sm text-gray-700">
+                                  {opt?.label || '\u2014'}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </>
+        )
+      })()}
 
       {/* Applications Card */}
       <Card>

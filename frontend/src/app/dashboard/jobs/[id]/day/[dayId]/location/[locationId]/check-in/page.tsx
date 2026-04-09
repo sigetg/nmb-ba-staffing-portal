@@ -139,7 +139,7 @@ export default function LocationCheckInPage({ params }: { params: Promise<{ id: 
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) { setError('Not authenticated'); return }
 
-      const { url } = await uploadJobPhoto(session.access_token, file, jobId, 'check_in', locationId)
+      const { url } = await uploadJobPhoto(session.access_token, file, jobId, 'check_in', locationId, profileId!)
       setCheckInPhoto(url)
     } catch {
       setError('Failed to upload photo')

@@ -121,7 +121,7 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) { setError('Not authenticated'); return }
 
-      const { url } = await uploadJobPhoto(session.access_token, file, jobId, 'check_out', lastLocationId || undefined)
+      const { url } = await uploadJobPhoto(session.access_token, file, jobId, 'check_out', lastLocationId || undefined, profileId!)
       setCheckoutPhoto(url)
     } catch {
       setError('Failed to upload photo')

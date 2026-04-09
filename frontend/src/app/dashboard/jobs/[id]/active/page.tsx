@@ -229,7 +229,7 @@ export default function ActiveJobPage({ params }: { params: Promise<{ id: string
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) { setError('Not authenticated'); return }
 
-      const result = await uploadJobPhoto(session.access_token, file, id, photoType)
+      const result = await uploadJobPhoto(session.access_token, file, id, photoType, undefined, profileId!)
       const newPhoto = { id: result.id, url: result.url, photo_type: photoType, job_id: id, ba_id: profileId!, created_at: new Date().toISOString() } as JobPhoto
       setPhotosByCategory(prev => ({
         ...prev,

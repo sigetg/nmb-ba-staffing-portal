@@ -23,12 +23,18 @@ async def upload_job_photo(
     job_id: str = Form(...),
     photo_type: str = Form(...),
     job_day_location_id: Optional[str] = Form(None),
-    current_user: CurrentUser = Depends(get_current_ba),
+    ba_id: Optional[str] = Form(None),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Upload a job photo to Dropbox and insert into job_photos table."""
-    ba_id = current_user.profile["id"] if current_user.profile else None
-    if not ba_id:
-        raise HTTPException(status_code=400, detail="BA profile not found")
+    if current_user.role == "admin":
+        if not ba_id:
+            raise HTTPException(status_code=400, detail="ba_id required for admin uploads")
+        resolved_ba_id = ba_id
+    else:
+        resolved_ba_id = current_user.profile["id"] if current_user.profile else None
+        if not resolved_ba_id:
+            raise HTTPException(status_code=400, detail="BA profile not found")
 
     file_bytes = await file.read()
     dropbox_storage.validate_image(file_bytes, file.content_type or "", file.filename or "")
@@ -43,7 +49,7 @@ async def upload_job_photo(
     supabase = get_supabase_client()
     insert_data = {
         "job_id": job_id,
-        "ba_id": ba_id,
+        "ba_id": resolved_ba_id,
         "url": url,
         "photo_type": photo_type,
         "dropbox_path": dropbox_path,
@@ -51,12 +57,13 @@ async def upload_job_photo(
     if job_day_location_id:
         insert_data["job_day_location_id"] = job_day_location_id
 
-    result = supabase.table("job_photos").insert(insert_data).select("id, url").single().execute()
+    result = supabase.table("job_photos").insert(insert_data).execute()
 
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to save photo record")
 
-    return {"id": result.data["id"], "url": result.data["url"]}
+    row = result.data[0]
+    return {"id": row["id"], "url": row["url"]}
 
 
 @router.delete("/job-photo/{photo_id}")
