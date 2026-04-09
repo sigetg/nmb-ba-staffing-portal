@@ -17,6 +17,7 @@ interface DashboardLayoutProps {
     role: 'ba' | 'admin'
     baStatus?: BAStatus
   }
+  impersonation?: { baName: string; baId: string } | null
 }
 
 const allBaNavItems = [
@@ -32,7 +33,7 @@ const adminNavItems = [
   { label: 'Brand Ambassadors', href: '/admin/bas', icon: <Icons.Users /> },
 ]
 
-export function DashboardLayout({ children, user }: DashboardLayoutProps) {
+export function DashboardLayout({ children, user, impersonation }: DashboardLayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const router = useRouter()
   const supabase = createClient()
@@ -107,6 +108,7 @@ export function DashboardLayout({ children, user }: DashboardLayoutProps) {
           onLogout={handleLogout}
           showMobileMenuButton
           onMobileMenuClick={() => setMobileMenuOpen(true)}
+          impersonation={impersonation}
         />
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>

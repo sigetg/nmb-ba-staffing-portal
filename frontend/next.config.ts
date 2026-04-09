@@ -5,8 +5,13 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: 'ebyylxxouwfayiburhdp.supabase.co',
-        pathname: '/storage/v1/object/public/**',
+        hostname: 'www.dropbox.com',
+        pathname: '/scl/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'dl.dropboxusercontent.com',
+        pathname: '/**',
       },
     ],
   },

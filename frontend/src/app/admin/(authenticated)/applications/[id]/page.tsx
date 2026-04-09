@@ -184,7 +184,7 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
             <div className="flex items-center gap-4 text-sm text-primary-400">
               <span className="flex items-center gap-1">
                 <Calendar className="w-4 h-4" />
-                {parseLocalDate(job.date).toLocaleDateString()}
+                {job.date ? parseLocalDate(job.date).toLocaleDateString() : 'Multi-day'}
               </span>
               <span className="flex items-center gap-1">
                 <DollarSign className="w-4 h-4" />

@@ -1,95 +1,189 @@
-import Link from "next/link";
-import Image from "next/image";
+'use client'
+
+import { Suspense, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
+import Image from 'next/image'
+import { createClient } from '@/lib/supabase/client'
+import { Button, Input, Card, CardContent, CardHeader, CardTitle, Alert } from '@/components/ui'
+
+function SignInForm() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const supabase = createClient()
+
+  const message = searchParams.get('message')
+  const authError = searchParams.get('error')
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+
+    if (!email.trim()) {
+      setError('Email is required')
+      return
+    }
+    if (!password) {
+      setError('Password is required')
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      })
+
+      if (signInError) {
+        setError(signInError.message)
+        return
+      }
+
+      if (data.user) {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', data.user.id)
+          .single()
+
+        if (userData?.role === 'admin') {
+          router.push('/admin/dashboard')
+        } else {
+          router.push('/dashboard')
+        }
+      }
+    } catch {
+      setError('An unexpected error occurred. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <Card className="mt-8">
+      <CardHeader>
+        <CardTitle>Sign In</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {message === 'password_updated' && (
+            <Alert variant="success">
+              Your password has been updated. Please sign in with your new password.
+            </Alert>
+          )}
+          {authError === 'auth_error' && (
+            <Alert variant="error">
+              The link is invalid or has expired. Please try again.
+            </Alert>
+          )}
+          {error && (
+            <Alert variant="error" onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
+
+          <Input
+            label="Email"
+            type="email"
+            name="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            disabled={isLoading}
+            autoComplete="email"
+          />
+
+          <Input
+            label="Password"
+            type="password"
+            name="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Your password"
+            disabled={isLoading}
+            autoComplete="current-password"
+          />
+
+          <div className="flex justify-end">
+            <Link
+              href="/auth/forgot-password"
+              className="text-sm text-primary-400 hover:text-primary-500"
+            >
+              Forgot your password?
+            </Link>
+          </div>
+
+          <Button
+            type="submit"
+            className="w-full"
+            isLoading={isLoading}
+          >
+            Sign In
+          </Button>
+        </form>
+
+        <div className="mt-6 text-center text-sm">
+          <span className="text-primary-400">
+            Don&apos;t have an account?{' '}
+          </span>
+          <Link
+            href="/auth/register"
+            className="font-medium text-primary-400 hover:text-primary-500"
+          >
+            Apply Now
+          </Link>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
 
 export default function Home() {
   return (
     <div className="min-h-screen bg-white">
       <main className="container mx-auto px-4 py-16">
-        <div className="text-center">
-          <Image
-            src="/logo.jpg"
-            alt="NMB Media - Promotions in Motion"
-            width={400}
-            height={160}
-            className="h-32 w-auto object-contain mx-auto"
-            priority
-          />
-          <h1 className="mt-6 text-4xl font-bold text-heading sm:text-5xl md:text-6xl">
-            BA Staffing Portal
-          </h1>
-          <p className="mt-4 text-xl text-primary-400">
-            Connect Brand Ambassadors with exciting opportunities
-          </p>
-        </div>
-
-        <div className="mt-16 grid gap-8 md:grid-cols-2 max-w-4xl mx-auto">
-          <div className="rounded-xl bg-white p-8 shadow-lg">
-            <h2 className="text-2xl font-semibold text-gray-900">
-              Brand Ambassadors
-            </h2>
-            <p className="mt-4 text-primary-400">
-              Find jobs, manage your profile, track your hours, and get paid.
-            </p>
-            <ul className="mt-4 space-y-2 text-sm text-primary-400">
-              <li>• Browse available opportunities</li>
-              <li>• Easy check-in/check-out</li>
-              <li>• Upload job photos</li>
-              <li>• Fast payments via Stripe</li>
-            </ul>
-            <div className="mt-6 flex gap-4">
-              <Link
-                href="/auth/login"
-                className="rounded-lg bg-primary-400 px-6 py-3 text-white hover:bg-primary-500 transition"
-              >
-                Sign In
-              </Link>
-              <Link
-                href="/auth/register"
-                className="rounded-lg border border-gray-300 px-6 py-3 text-gray-700 hover:bg-gray-50 transition"
-              >
-                Apply Now
-              </Link>
+        <div className="max-w-md mx-auto">
+          <div className="text-center">
+            <Image
+              src="/logo.jpg"
+              alt="NMB Media - Promotions in Motion"
+              width={400}
+              height={160}
+              className="h-32 w-auto object-contain mx-auto"
+              priority
+            />
+            <h1 className="mt-6 text-4xl font-bold text-heading sm:text-5xl">
+              Staffing Portal
+            </h1>
+            <div className="mt-4 space-y-2 text-primary-400">
+              <p className="text-lg font-medium">
+                Welcome — you&apos;ve made it!
+                <br />
+                Now it&apos;s time to shine.
+              </p>
+              <p className="text-sm">
+                Our clients are looking for happy, energetic, and outgoing individuals
+                to help bring their products and services to life for consumers.
+              </p>
+              <p className="text-sm">
+                If you&apos;re ready to be part of an exciting team, we&apos;d love to have you.
+                <br />
+                Please sign in or sign up below to get started.
+              </p>
             </div>
           </div>
 
-          <div className="rounded-xl bg-white p-8 shadow-lg">
-            <h2 className="text-2xl font-semibold text-gray-900">
-              Administrators
-            </h2>
-            <p className="mt-4 text-primary-400">
-              Manage jobs, screen BAs, track attendance, and process payments.
-            </p>
-            <ul className="mt-4 space-y-2 text-sm text-primary-400">
-              <li>• Post and manage jobs</li>
-              <li>• Screen BA applications</li>
-              <li>• Real-time attendance tracking</li>
-              <li>• Payment management</li>
-            </ul>
-            <div className="mt-6">
-              <Link
-                href="/admin/login"
-                className="rounded-lg bg-gray-900 px-6 py-3 text-white hover:bg-gray-800 transition"
-              >
-                Admin Login
-              </Link>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-16 text-center text-sm text-primary-400">
-          <p>
-            Backend API:{" "}
-            <a
-              href="http://localhost:8000/health"
-              className="text-primary-400 hover:underline"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              http://localhost:8000
-            </a>
-          </p>
+          <Suspense>
+            <SignInForm />
+          </Suspense>
         </div>
       </main>
     </div>
-  );
+  )
 }

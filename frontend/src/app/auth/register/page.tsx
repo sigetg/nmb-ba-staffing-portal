@@ -13,6 +13,7 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [emailSent, setEmailSent] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -52,6 +53,7 @@ export default function RegisterPage() {
           data: {
             role: 'ba',
           },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       })
 
@@ -60,7 +62,10 @@ export default function RegisterPage() {
         return
       }
 
-      if (data.user) {
+      if (data.user && !data.session) {
+        // Email confirmation is required
+        setEmailSent(true)
+      } else if (data.user) {
         router.push('/auth/setup')
       }
     } catch {
@@ -91,9 +96,28 @@ export default function RegisterPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Register</CardTitle>
+            <CardTitle>{emailSent ? 'Check Your Email' : 'Register'}</CardTitle>
           </CardHeader>
           <CardContent>
+            {emailSent ? (
+              <div className="space-y-4">
+                <Alert variant="success">
+                  We&apos;ve sent a confirmation link to <strong>{email}</strong>. Please check your email and click the link to activate your account.
+                </Alert>
+                <p className="text-sm text-primary-400 text-center">
+                  Didn&apos;t receive the email? Check your spam folder or try again.
+                </p>
+                <div className="text-center">
+                  <Link
+                    href="/"
+                    className="font-medium text-primary-400 hover:text-primary-500 text-sm"
+                  >
+                    Back to Sign In
+                  </Link>
+                </div>
+              </div>
+            ) : (
+            <>
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
                 <Alert variant="error" onClose={() => setError(null)}>
@@ -148,12 +172,14 @@ export default function RegisterPage() {
                 Already have an account?{' '}
               </span>
               <Link
-                href="/auth/login"
+                href="/"
                 className="font-medium text-primary-400 hover:text-primary-500"
               >
                 Sign in
               </Link>
             </div>
+            </>
+            )}
           </CardContent>
         </Card>
 

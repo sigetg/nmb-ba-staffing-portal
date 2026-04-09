@@ -1,13 +1,15 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Alert } from '@/components/ui'
 import { ChevronLeft, MapPin, Clock, CheckCircle2, XCircle, Camera, Loader2 } from 'lucide-react'
+import { uploadJobPhoto } from '@/lib/api'
 import type { Job } from '@/types'
+import { getImpersonatedBAId } from '@/lib/impersonation'
 
 export default function CheckInPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -29,6 +31,7 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
   const [userId, setUserId] = useState<string | null>(null)
   const [profileId, setProfileId] = useState<string | null>(null)
 
+  const isRedirecting = useRef(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -40,15 +43,16 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
+        isRedirecting.current = true
         router.push('/auth/login')
         return
       }
       setUserId(user.id)
 
-      // Load job
+      // Load job with days/locations
       const { data: jobData, error: jobError } = await supabase
         .from('jobs')
-        .select('*')
+        .select('*, job_days(*, job_day_locations(*))')
         .eq('id', id)
         .single()
 
@@ -56,14 +60,27 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
         setError('Job not found')
         return
       }
+
+      // Redirect to multi-day flow if job has days
+      const jobDays = jobData.job_days || []
+      if (jobDays.length > 0) {
+        const today = new Date().toISOString().split('T')[0]
+        const todayDay = jobDays.find((d: { date: string }) => d.date === today) || jobDays.sort((a: { sort_order: number }, b: { sort_order: number }) => a.sort_order - b.sort_order)[0]
+        const locs = (todayDay?.job_day_locations || []).sort((a: { sort_order: number }, b: { sort_order: number }) => a.sort_order - b.sort_order)
+        if (locs.length > 0) {
+          isRedirecting.current = true
+          router.push(`/dashboard/jobs/${id}/day/${todayDay.id}/location/${locs[0].id}/check-in`)
+          return
+        }
+      }
+
       setJob(jobData)
 
-      // Check if already checked in
-      const { data: profile } = await supabase
-        .from('ba_profiles')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
+      // Check if already checked in (legacy)
+      const impersonatedId = getImpersonatedBAId()
+      const { data: profile } = await (impersonatedId
+        ? supabase.from('ba_profiles').select('id').eq('id', impersonatedId).single()
+        : supabase.from('ba_profiles').select('id').eq('user_id', user.id).single())
 
       if (profile) {
         setProfileId(profile.id)
@@ -75,6 +92,7 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
           .single()
 
         if (checkIn) {
+          isRedirecting.current = true
           if (checkIn.check_out_time) {
             router.push(`/dashboard/my-jobs`)
           } else {
@@ -168,36 +186,11 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
     setError(null)
 
     try {
-      const ext = file.name.split('.').pop()
-      const filePath = `${userId}/${id}/check_in-${Date.now()}.${ext}`
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) { setError('Not authenticated'); return }
 
-      const { error: uploadError } = await supabase.storage
-        .from('job-photos')
-        .upload(filePath, file)
-
-      if (uploadError) {
-        setError(uploadError.message)
-        return
-      }
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('job-photos')
-        .getPublicUrl(filePath)
-
-      // Insert into job_photos table
-      const { error: insertError } = await supabase.from('job_photos').insert({
-        job_id: id,
-        ba_id: profileId,
-        url: publicUrl,
-        photo_type: 'check_in',
-      })
-
-      if (insertError) {
-        setError(insertError.message)
-        return
-      }
-
-      setCheckInPhoto(publicUrl)
+      const { url } = await uploadJobPhoto(session.access_token, file, id, 'check_in')
+      setCheckInPhoto(url)
     } catch {
       setError('Failed to upload photo')
     } finally {
@@ -219,11 +212,10 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
       }
 
       // Get BA profile
-      const { data: profile } = await supabase
-        .from('ba_profiles')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
+      const impId = getImpersonatedBAId()
+      const { data: profile } = await (impId
+        ? supabase.from('ba_profiles').select('id').eq('id', impId).single()
+        : supabase.from('ba_profiles').select('id').eq('user_id', user.id).single())
 
       if (!profile) {
         setError('Profile not found')
@@ -268,6 +260,13 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
   }
 
   if (!job) {
+    if (isRedirecting.current) {
+      return (
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-400" />
+        </div>
+      )
+    }
     return (
       <div className="text-center py-12">
         <h2 className="text-xl font-semibold text-gray-900">Job not found</h2>

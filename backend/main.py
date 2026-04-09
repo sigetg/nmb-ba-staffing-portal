@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health, auth, jobs, bas, admin
+from app.api import health, auth, jobs, bas, admin, files, job_types, reports
 from app.core.config import settings
 
 app = FastAPI(
@@ -13,7 +13,7 @@ app = FastAPI(
 )
 
 # Build CORS origins list, including frontend_url if set
-cors_origins = list(settings.cors_origins)
+cors_origins = list(settings.cors_origins_list)
 if settings.frontend_url and settings.frontend_url not in cors_origins:
     cors_origins.append(settings.frontend_url)
 
@@ -32,6 +32,9 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
 app.include_router(bas.router, prefix="/api/bas", tags=["Brand Ambassadors"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+app.include_router(files.router, prefix="/api/files", tags=["Files"])
+app.include_router(job_types.router, prefix="/api/job-types", tags=["Job Types"])
+app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
 
 
 @app.get("/")

@@ -4,102 +4,119 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { Button, Input, Textarea, Select, Card, CardContent, CardHeader, CardTitle, Alert, AddressAutocomplete } from '@/components/ui'
-import { ChevronLeft } from 'lucide-react'
+import { Button, Alert } from '@/components/ui'
+import { ChevronLeft, ChevronRight, Save } from 'lucide-react'
+import { uploadJobWorksheet } from '@/lib/api'
+import { WizardProvider, useWizard } from '@/components/admin/job-wizard/wizard-context'
+import { WizardProgress } from '@/components/admin/job-wizard/wizard-progress'
+import { StepBasicInfo } from '@/components/admin/job-wizard/step-basic-info'
+import { StepDays } from '@/components/admin/job-wizard/step-days'
+import { StepLocations } from '@/components/admin/job-wizard/step-locations'
+import { StepReview } from '@/components/admin/job-wizard/step-review'
 
-const statusOptions = [
-  { value: 'draft', label: 'Draft' },
-  { value: 'published', label: 'Published' },
-]
-
-export default function NewJobPage() {
+function WizardContent() {
+  const { state, setCurrentStep, canGoNext } = useWizard()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  // Form state
-  const [title, setTitle] = useState('')
-  const [brand, setBrand] = useState('')
-  const [description, setDescription] = useState('')
-  const [location, setLocation] = useState('')
-  const [latitude, setLatitude] = useState<number | null>(null)
-  const [longitude, setLongitude] = useState<number | null>(null)
-  const [date, setDate] = useState('')
-  const [startTime, setStartTime] = useState('')
-  const [endTime, setEndTime] = useState('')
-  const [payRate, setPayRate] = useState('')
-  const [slots, setSlots] = useState('')
-  const [worksheetUrl, setWorksheetUrl] = useState('')
-  const [status, setStatus] = useState('draft')
-
   const router = useRouter()
   const supabase = createClient()
 
-  const validateForm = () => {
-    if (!title.trim()) {
-      setError('Title is required')
-      return false
-    }
-    if (!brand.trim()) {
-      setError('Brand is required')
-      return false
-    }
-    if (!location.trim()) {
-      setError('Location is required')
-      return false
-    }
-    if (!date) {
-      setError('Date is required')
-      return false
-    }
-    if (!startTime) {
-      setError('Start time is required')
-      return false
-    }
-    if (!endTime) {
-      setError('End time is required')
-      return false
-    }
-    if (!payRate || parseFloat(payRate) <= 0) {
-      setError('Pay rate must be greater than 0')
-      return false
-    }
-    if (!slots || parseInt(slots) <= 0) {
-      setError('Slots must be greater than 0')
-      return false
-    }
-    return true
-  }
+  const steps = [
+    <StepBasicInfo key="basic" />,
+    <StepDays key="days" />,
+    <StepLocations key="locations" />,
+    <StepReview key="review" />,
+  ]
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const saveJob = async (status: 'draft' | 'published') => {
     setError(null)
 
-    if (!validateForm()) return
+    // Draft only requires a title
+    if (status === 'draft' && !state.title.trim()) {
+      setError('Title is required to save a draft.')
+      return
+    }
 
     setIsLoading(true)
 
     try {
-      const { error: insertError } = await supabase.from('jobs').insert({
-        title: title.trim(),
-        brand: brand.trim(),
-        description: description.trim(),
-        location: location.trim(),
-        latitude,
-        longitude,
-        date,
-        start_time: startTime,
-        end_time: endTime,
-        pay_rate: parseFloat(payRate),
-        slots: parseInt(slots),
-        slots_filled: 0,
-        worksheet_url: worksheetUrl.trim() || null,
-        status,
-        timezone: 'America/Chicago',
-      })
+      // Detect timezone from first location's coordinates
+      const firstLoc = state.days[0]?.locations[0]
+      let timezone = 'America/Chicago'
+      if (firstLoc?.latitude != null && firstLoc?.longitude != null) {
+        timezone = 'America/Chicago'
+      }
 
-      if (insertError) {
-        setError(insertError.message)
+      // 1. Insert the job (legacy columns null for multi-day)
+      const { data: job, error: insertError } = await supabase.from('jobs').insert({
+        title: state.title.trim(),
+        brand: state.brand.trim() || null,
+        description: state.description.trim() || null,
+        location: null,
+        latitude: null,
+        longitude: null,
+        date: null,
+        start_time: null,
+        end_time: null,
+        pay_rate: state.payRate ? parseFloat(state.payRate) : 0,
+        slots: state.slots ? parseInt(state.slots) : 1,
+        slots_filled: 0,
+        worksheet_url: null,
+        status,
+        timezone,
+        job_type_id: state.jobTypeId || null,
+      }).select('id').single()
+
+      if (insertError || !job) {
+        setError(insertError?.message || 'Failed to create job')
         return
+      }
+
+      // 2. Insert days and locations (if any exist)
+      for (const day of state.days) {
+        const { data: dayRow, error: dayError } = await supabase.from('job_days').insert({
+          job_id: job.id,
+          date: day.date,
+          sort_order: day.sort_order,
+        }).select('id').single()
+
+        if (dayError || !dayRow) {
+          setError('Failed to create job day: ' + (dayError?.message || ''))
+          return
+        }
+
+        for (const loc of day.locations) {
+          const { error: locError } = await supabase.from('job_day_locations').insert({
+            job_day_id: dayRow.id,
+            job_id: job.id,
+            location: loc.location.trim(),
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+            start_time: loc.start_time,
+            end_time: loc.end_time,
+            sort_order: loc.sort_order,
+          })
+
+          if (locError) {
+            setError('Failed to create location: ' + locError.message)
+            return
+          }
+        }
+      }
+
+      // 3. Upload worksheet if provided
+      if (state.worksheetFile) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) {
+          setError('Job created but failed to upload worksheet: not authenticated')
+          return
+        }
+        try {
+          await uploadJobWorksheet(session.access_token, state.worksheetFile, job.id)
+        } catch (err) {
+          setError('Job created but failed to upload worksheet: ' + (err instanceof Error ? err.message : String(err)))
+          return
+        }
       }
 
       router.push('/admin/jobs')
@@ -111,12 +128,9 @@ export default function NewJobPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Link
-          href="/admin/jobs"
-          className="p-2 rounded-lg hover:bg-gray-100"
-        >
+        <Link href="/admin/jobs" className="p-2 rounded-lg hover:bg-gray-100">
           <ChevronLeft className="w-5 h-5" />
         </Link>
         <h1 className="text-2xl font-bold text-heading">Create New Job</h1>
@@ -128,134 +142,63 @@ export default function NewJobPage() {
         </Alert>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Job Details</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Basic Info */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Input
-                label="Job Title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g., Brand Ambassador - Product Demo"
-              />
-              <Input
-                label="Brand"
-                value={brand}
-                onChange={(e) => setBrand(e.target.value)}
-                placeholder="e.g., Nike, Apple"
-              />
-            </div>
+      <WizardProgress />
 
-            <Textarea
-              label="Description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Job description, requirements, and expectations..."
-              rows={4}
-            />
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        {steps[state.currentStep]}
+      </div>
 
-            {/* Location */}
-            <AddressAutocomplete
-              label="Location"
-              value={location}
-              onChange={(val) => {
-                setLocation(val)
-                setLatitude(null)
-                setLongitude(null)
-              }}
-              onPlaceSelect={(place) => {
-                setLocation(place.address)
-                setLatitude(place.latitude)
-                setLongitude(place.longitude)
-              }}
-              placeholder="e.g., 123 Main St, New York, NY 10001"
-              helperText={
-                latitude !== null && longitude !== null
-                  ? `Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
-                  : 'Select an address from suggestions to set coordinates'
-              }
-            />
+      {/* Navigation buttons */}
+      <div className="flex justify-between">
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => saveJob('draft')}
+            isLoading={isLoading}
+          >
+            <Save className="w-4 h-4 mr-1" /> Save Draft
+          </Button>
+        </div>
 
-            {/* Date and Time */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <Input
-                label="Date"
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
-              <Input
-                label="Start Time"
-                type="time"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-              />
-              <Input
-                label="End Time"
-                type="time"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-              />
-            </div>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setCurrentStep(state.currentStep - 1)}
+            disabled={state.currentStep === 0}
+          >
+            <ChevronLeft className="w-4 h-4 mr-1" /> Back
+          </Button>
 
-            {/* Pay and Slots */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Input
-                label="Pay Rate ($/hr)"
-                type="number"
-                step="0.01"
-                min="0"
-                value={payRate}
-                onChange={(e) => setPayRate(e.target.value)}
-                placeholder="e.g., 25.00"
-              />
-              <Input
-                label="Available Slots"
-                type="number"
-                min="1"
-                value={slots}
-                onChange={(e) => setSlots(e.target.value)}
-                placeholder="e.g., 5"
-              />
-            </div>
-
-            {/* Additional */}
-            <Input
-              label="Worksheet URL (optional)"
-              type="url"
-              value={worksheetUrl}
-              onChange={(e) => setWorksheetUrl(e.target.value)}
-              placeholder="https://docs.google.com/..."
-            />
-
-            <Select
-              label="Status"
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              options={statusOptions}
-            />
-
-            {/* Actions */}
-            <div className="flex gap-3 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => router.push('/admin/jobs')}
-                disabled={isLoading}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" isLoading={isLoading}>
-                Create Job
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+          {state.currentStep < 3 ? (
+            <Button
+              type="button"
+              onClick={() => setCurrentStep(state.currentStep + 1)}
+              disabled={!canGoNext()}
+            >
+              Next <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              onClick={() => saveJob('published')}
+              isLoading={isLoading}
+              disabled={!canGoNext()}
+            >
+              Publish Job
+            </Button>
+          )}
+        </div>
+      </div>
     </div>
+  )
+}
+
+export default function NewJobPage() {
+  return (
+    <WizardProvider>
+      <WizardContent />
+    </WizardProvider>
   )
 }

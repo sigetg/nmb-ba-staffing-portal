@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.core.supabase import get_supabase_client
 from app.services.email import (
     get_ba_email,
+    get_job_display_info,
     send_ba_approved_email,
     send_ba_rejected_email,
     send_ba_suspended_email,
@@ -81,10 +82,10 @@ async def get_dashboard(
 
     today = datetime.utcnow().date().isoformat()
     upcoming_jobs = (
-        supabase.table("jobs")
-        .select("*", count="exact", head=True)
+        supabase.table("job_days")
+        .select("job_id, jobs!inner(status)", count="exact", head=True)
         .gte("date", today)
-        .eq("status", "published")
+        .eq("jobs.status", "published")
         .execute()
     )
 
@@ -212,7 +213,7 @@ async def assign_bas_to_job(
     # Check job exists
     job = (
         supabase.table("jobs")
-        .select("slots, slots_filled, title, date, location, start_time")
+        .select("slots, slots_filled, title, date, location, start_time, job_days(date, job_day_locations(location, start_time))")
         .eq("id", job_id)
         .single()
         .execute()
@@ -247,13 +248,14 @@ async def assign_bas_to_job(
             updated += 1
             email, name = get_ba_email(supabase, ba_id)
             if email:
+                info = get_job_display_info(supabase, job_id, job.data)
                 send_application_approved_email(
                     to_email=email,
                     name=name,
                     job_title=job.data["title"],
-                    job_date=job.data["date"],
-                    job_location=job.data["location"],
-                    start_time=job.data["start_time"],
+                    job_date=info["date"],
+                    job_location=info["location"],
+                    start_time=info["start_time"],
                     job_id=job_id,
                 )
 
@@ -340,7 +342,7 @@ async def update_application_status(
     # Fetch application with job and BA data
     application = (
         supabase.table("job_applications")
-        .select("id, status, job_id, ba_id, jobs(id, title, date, location, start_time, slots_filled), ba_profiles(id, name, user_id)")
+        .select("id, status, job_id, ba_id, jobs(id, title, date, location, start_time, slots_filled, job_days(date, job_day_locations(location, start_time))), ba_profiles(id, name, user_id)")
         .eq("id", application_id)
         .single()
         .execute()
@@ -375,13 +377,14 @@ async def update_application_status(
     email, name = get_ba_email(supabase, ba_data["id"])
     if email:
         if body.status == "approved":
+            info = get_job_display_info(supabase, job_data["id"], job_data)
             send_application_approved_email(
                 to_email=email,
                 name=name,
                 job_title=job_data["title"],
-                job_date=job_data["date"],
-                job_location=job_data["location"],
-                start_time=job_data["start_time"],
+                job_date=info["date"],
+                job_location=info["location"],
+                start_time=info["start_time"],
                 job_id=job_data["id"],
                 notes=body.notes,
             )
@@ -405,22 +408,33 @@ async def send_job_reminders(
 
     tomorrow = (datetime.utcnow() + timedelta(days=1)).date().isoformat()
 
-    # Get jobs happening tomorrow
-    jobs = (
-        supabase.table("jobs")
-        .select("id, title, date, location, start_time")
+    # Get job_days happening tomorrow with their jobs and locations
+    day_results = (
+        supabase.table("job_days")
+        .select("job_id, date, job_day_locations(location, start_time), jobs!inner(id, title, status)")
         .eq("date", tomorrow)
-        .eq("status", "published")
+        .eq("jobs.status", "published")
         .execute()
     )
 
     sent = 0
-    for job in jobs.data or []:
-        # Get approved applications for this job
+    seen_jobs: dict[str, bool] = {}
+    for day in day_results.data or []:
+        job_id = day["job_id"]
+        if job_id in seen_jobs:
+            continue
+        seen_jobs[job_id] = True
+
+        job_info = day["jobs"]
+        locs = day.get("job_day_locations") or []
+        location = locs[0]["location"] if locs else ""
+        start_time = locs[0]["start_time"] if locs else ""
+
+        # Get approved BAs for this job
         applications = (
             supabase.table("job_applications")
             .select("ba_id")
-            .eq("job_id", job["id"])
+            .eq("job_id", job_id)
             .eq("status", "approved")
             .execute()
         )
@@ -431,11 +445,11 @@ async def send_job_reminders(
                 send_job_reminder_email(
                     to_email=email,
                     name=name,
-                    job_title=job["title"],
-                    job_date=job["date"],
-                    job_location=job["location"],
-                    start_time=job["start_time"],
-                    job_id=job["id"],
+                    job_title=job_info["title"],
+                    job_date=day["date"],
+                    job_location=location,
+                    start_time=start_time,
+                    job_id=job_id,
                 )
                 sent += 1
 
@@ -447,33 +461,86 @@ async def get_job_attendance(
     job_id: str,
     current_user: CurrentUser = Depends(get_current_admin),
 ):
-    """Get attendance records for a job."""
+    """Get attendance records for a job, including per-location data for multi-day jobs."""
     supabase = get_supabase_client()
 
-    # Check job exists
-    job = supabase.table("jobs").select("*").eq("id", job_id).single().execute()
+    # Check job exists with days/locations
+    job = (
+        supabase.table("jobs")
+        .select("*, job_days(*, job_day_locations(*))")
+        .eq("id", job_id)
+        .single()
+        .execute()
+    )
     if not job.data:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # Get approved applications with check-in data
+    # Get approved applications
     applications = (
         supabase.table("job_applications")
-        .select("*, ba_profiles(name, phone), check_ins(*)")
+        .select("*, ba_profiles(name, phone)")
         .eq("job_id", job_id)
         .eq("status", "approved")
         .execute()
     )
 
-    attendance = []
+    ba_list = []
     for app in applications.data or []:
-        checkin = app.get("check_ins")
-        if isinstance(checkin, list):
-            checkin = checkin[0] if checkin else None
-
-        attendance.append({
+        ba_list.append({
             "ba_id": app["ba_id"],
             "ba_name": app["ba_profiles"]["name"] if app.get("ba_profiles") else None,
             "ba_phone": app["ba_profiles"]["phone"] if app.get("ba_profiles") else None,
+        })
+
+    ba_ids = [b["ba_id"] for b in ba_list]
+
+    # Get legacy check-ins
+    legacy_check_ins = []
+    if ba_ids:
+        legacy_result = (
+            supabase.table("check_ins")
+            .select("*")
+            .eq("job_id", job_id)
+            .in_("ba_id", ba_ids)
+            .execute()
+        )
+        legacy_check_ins = legacy_result.data or []
+
+    # Get location check-ins for all locations in this job
+    location_ids = []
+    for day in job.data.get("job_days", []):
+        for loc in day.get("job_day_locations", []):
+            location_ids.append(loc["id"])
+
+    location_check_ins = []
+    if location_ids and ba_ids:
+        loc_result = (
+            supabase.table("location_check_ins")
+            .select("*")
+            .in_("job_day_location_id", location_ids)
+            .in_("ba_id", ba_ids)
+            .execute()
+        )
+        location_check_ins = loc_result.data or []
+
+    # Get travel logs
+    loc_ci_ids = [ci["id"] for ci in location_check_ins]
+    travel_logs = []
+    if loc_ci_ids:
+        travel_result = (
+            supabase.table("travel_logs")
+            .select("*")
+            .in_("from_location_check_in_id", loc_ci_ids)
+            .execute()
+        )
+        travel_logs = travel_result.data or []
+
+    # Build legacy attendance
+    legacy_attendance = []
+    for ba in ba_list:
+        checkin = next((ci for ci in legacy_check_ins if ci["ba_id"] == ba["ba_id"]), None)
+        legacy_attendance.append({
+            **ba,
             "checked_in": checkin is not None,
             "check_in_time": checkin["check_in_time"] if checkin else None,
             "checked_out": checkin.get("check_out_time") is not None if checkin else False,
@@ -482,10 +549,12 @@ async def get_job_attendance(
 
     return {
         "job": job.data,
-        "attendance": attendance,
-        "total_assigned": len(attendance),
-        "checked_in": sum(1 for a in attendance if a["checked_in"]),
-        "checked_out": sum(1 for a in attendance if a["checked_out"]),
+        "attendance": legacy_attendance,
+        "location_check_ins": location_check_ins,
+        "travel_logs": travel_logs,
+        "total_assigned": len(ba_list),
+        "checked_in": sum(1 for a in legacy_attendance if a["checked_in"]),
+        "checked_out": sum(1 for a in legacy_attendance if a["checked_out"]),
     }
 
 
@@ -539,20 +608,45 @@ async def get_jobs_report(
     """Generate jobs report."""
     supabase = get_supabase_client()
 
-    query = supabase.table("jobs").select("*")
+    result = supabase.table("jobs").select("*, job_days(date)").execute()
+    all_jobs = result.data or []
 
-    if start_date:
-        query = query.gte("date", start_date)
-    if end_date:
-        query = query.lte("date", end_date)
+    # Filter by date range using job_days or legacy date
+    def get_job_dates(j: dict) -> list[str]:
+        days = j.get("job_days") or []
+        if days:
+            return [d["date"] for d in days if d.get("date")]
+        if j.get("date"):
+            return [j["date"]]
+        return []
 
-    result = query.execute()
-    jobs = result.data or []
+    jobs = []
+    for j in all_jobs:
+        dates = get_job_dates(j)
+        if not dates:
+            # Include jobs with no date info if no date filter
+            if not start_date and not end_date:
+                jobs.append(j)
+            continue
+        min_date = min(dates)
+        max_date = max(dates)
+        if start_date and max_date < start_date:
+            continue
+        if end_date and min_date > end_date:
+            continue
+        jobs.append(j)
 
     # Calculate stats
     total_jobs = len(jobs)
     today = datetime.utcnow().date().isoformat()
-    completed_jobs = sum(1 for j in jobs if j["status"] == "published" and j["date"] < today)
+
+    def is_completed(j: dict) -> bool:
+        if j["status"] != "published":
+            return False
+        dates = get_job_dates(j)
+        return bool(dates) and max(dates) < today
+
+    completed_jobs = sum(1 for j in jobs if is_completed(j))
     total_slots = sum(j["slots"] for j in jobs)
     filled_slots = sum(j["slots_filled"] for j in jobs)
     total_pay = sum(j["pay_rate"] * j["slots_filled"] for j in jobs)

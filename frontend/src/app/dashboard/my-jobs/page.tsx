@@ -1,43 +1,84 @@
+import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Card, CardContent, Badge } from '@/components/ui'
 import { Calendar, Clock, MapPin, CheckCircle2, XCircle, ChevronRight } from 'lucide-react'
-import { parseLocalDate, getLocalToday, getJobDisplayStatus, getTimezoneAbbr } from '@/lib/utils'
+import { parseLocalDate, getLocalToday, getTimezoneAbbr, getMultiDayDisplayStatus, getJobDateDisplay, getJobLocationDisplay } from '@/lib/utils'
+import type { JobWithDays } from '@/types'
 
-async function getMyJobs(userId: string) {
+type Application = {
+  id: string
+  status: string
+  applied_at: string
+  jobs: JobWithDays
+}
+
+function getDayProgress(job: JobWithDays): { current: number; total: number } | null {
+  const days = (job.job_days || []).sort((a, b) => a.date.localeCompare(b.date))
+  if (days.length <= 1) return null
+
+  const today = getLocalToday()
+  const currentIdx = days.findIndex(d => d.date >= today)
+  if (currentIdx === -1) return { current: days.length, total: days.length }
+  return { current: currentIdx + 1, total: days.length }
+}
+
+async function getMyJobs(userId: string, impersonatedBAId?: string) {
   const supabase = await createClient()
 
-  // Get BA profile
-  const { data: profile } = await supabase
-    .from('ba_profiles')
-    .select('id')
-    .eq('user_id', userId)
-    .single()
+  const profileQuery = impersonatedBAId
+    ? supabase.from('ba_profiles').select('id').eq('id', impersonatedBAId).single()
+    : supabase.from('ba_profiles').select('id').eq('user_id', userId).single()
+  const { data: profile } = await profileQuery
 
   if (!profile) {
-    return { applications: [], checkIns: {} as Record<string, { check_in_time: string; check_out_time?: string; job_id: string }> }
+    return { applications: [] as Application[], activeJobId: null as string | null, activeCheckInTime: null as string | null, isMultiDayActive: false }
   }
 
-  // Get all applications with job details
+  // Get all applications with job details including days/locations
   const { data: applications } = await supabase
     .from('job_applications')
-    .select('*, jobs(*)')
+    .select('*, jobs(*, job_days(*, job_day_locations(*)))')
     .eq('ba_id', profile.id)
     .order('applied_at', { ascending: false })
 
-  // Get check-ins for all jobs
-  const { data: checkIns } = await supabase
+  // Check for active legacy check-in
+  const { data: legacyCheckIns } = await supabase
     .from('check_ins')
-    .select('*')
+    .select('job_id, check_in_time, check_out_time')
     .eq('ba_id', profile.id)
 
-  const checkInMap: Record<string, { check_in_time: string; check_out_time?: string; job_id: string }> = Object.fromEntries(
-    (checkIns || []).map(c => [c.job_id, c])
-  )
+  let activeJobId: string | null = null
+  let activeCheckInTime: string | null = null
+  let isMultiDayActive = false
+
+  const activeCheckIn = (legacyCheckIns || []).find(c => c.check_in_time && !c.check_out_time)
+  if (activeCheckIn) {
+    activeJobId = activeCheckIn.job_id
+    activeCheckInTime = activeCheckIn.check_in_time
+  }
+
+  // Check for active location_check_in (multi-day)
+  const { data: activeLocationCi } = await supabase
+    .from('location_check_ins')
+    .select('*, job_day_locations!inner(job_id)')
+    .eq('ba_id', profile.id)
+    .is('check_out_time', null)
+    .eq('skipped', false)
+    .limit(1)
+    .single()
+
+  if (activeLocationCi && !activeJobId) {
+    activeJobId = (activeLocationCi as { job_day_locations: { job_id: string } }).job_day_locations.job_id
+    activeCheckInTime = activeLocationCi.check_in_time
+    isMultiDayActive = true
+  }
 
   return {
-    applications: applications || [],
-    checkIns: checkInMap,
+    applications: (applications || []) as Application[],
+    activeJobId,
+    activeCheckInTime,
+    isMultiDayActive,
   }
 }
 
@@ -51,65 +92,50 @@ export default async function MyJobsPage() {
     return null
   }
 
-  const { applications, checkIns } = await getMyJobs(user.id)
+  const cookieStore = await cookies()
+  const impersonatedBAId = cookieStore.get('impersonate_ba_id')?.value
 
-  const today = getLocalToday()
+  const { applications, activeJobId, activeCheckInTime, isMultiDayActive } = await getMyJobs(user.id, impersonatedBAId)
 
-  // Find active job (checked in but not checked out)
-  const activeJobEntry = Object.entries(checkIns).find(
-    ([, checkIn]) => checkIn.check_in_time && !checkIn.check_out_time
-  )
-  const activeJobId = activeJobEntry ? activeJobEntry[0] : null
-  const activeCheckIn = activeJobEntry ? activeJobEntry[1] : null
   const activeJobApp = activeJobId
-    ? applications.find((app: { jobs: { id: string } }) => app.jobs.id === activeJobId)
+    ? applications.find(app => app.jobs.id === activeJobId)
     : null
 
-  // Categorize jobs using computed display status
-  const upcoming = applications.filter(
-    (app: { status: string; jobs: { date: string; start_time: string; end_time: string; status: string; timezone: string } }) => {
-      if (app.status !== 'approved') return false
-      const displayStatus = getJobDisplayStatus(app.jobs)
-      return displayStatus === 'upcoming' || displayStatus === 'in_progress'
-    }
-  )
-  const pending = applications.filter(
-    (app: { status: string }) => app.status === 'pending'
-  )
-  const completed = applications.filter(
-    (app: { status: string; jobs: { date: string; start_time: string; end_time: string; status: string; timezone: string } }) => {
-      if (app.status !== 'approved') return false
-      const displayStatus = getJobDisplayStatus(app.jobs)
-      return displayStatus === 'completed'
-    }
-  )
-  const rejected = applications.filter(
-    (app: { status: string }) => app.status === 'rejected'
-  )
-
-  type Application = {
-    id: string
-    status: string
-    applied_at: string
-    jobs: {
-      id: string
-      title: string
-      brand: string
-      date: string
-      start_time: string
-      end_time: string
-      location: string
-      pay_rate: number
-      status: string
-      timezone: string
-    }
-  }
+  // Categorize jobs
+  const upcoming = applications.filter(app => {
+    if (app.status !== 'approved') return false
+    const displayStatus = getMultiDayDisplayStatus(app.jobs)
+    return displayStatus === 'upcoming' || displayStatus === 'in_progress'
+  })
+  const pending = applications.filter(app => app.status === 'pending')
+  const completed = applications.filter(app => {
+    if (app.status !== 'approved') return false
+    const displayStatus = getMultiDayDisplayStatus(app.jobs)
+    return displayStatus === 'completed'
+  })
+  const rejected = applications.filter(app => app.status === 'rejected')
 
   const renderJobCard = (app: Application, showActions: boolean = false) => {
-    const checkIn = checkIns[app.jobs.id]
-    const isToday = app.jobs.date === today
-    const canCheckIn = isToday && !checkIn && app.status === 'approved'
-    const isActive = isToday && checkIn && !checkIn.check_out_time
+    const isActive = app.jobs.id === activeJobId
+    const dayProgress = getDayProgress(app.jobs)
+    const today = getLocalToday()
+    const days = (app.jobs.job_days || []).sort((a, b) => a.date.localeCompare(b.date))
+    const isToday = days.length > 0
+      ? days.some(d => d.date === today)
+      : app.jobs.date === today
+
+    // Find next day info for multi-day jobs between days
+    let nextDayInfo: string | null = null
+    if (days.length > 1 && !isActive) {
+      const nextDay = days.find(d => d.date >= today)
+      if (nextDay) {
+        const locs = (nextDay.job_day_locations || []).sort((a, b) => a.sort_order - b.sort_order)
+        const firstLoc = locs[0]
+        if (firstLoc) {
+          nextDayInfo = `${parseLocalDate(nextDay.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} - ${firstLoc.location} at ${firstLoc.start_time}`
+        }
+      }
+    }
 
     return (
       <div
@@ -117,12 +143,13 @@ export default async function MyJobsPage() {
         className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-gray-50 rounded-lg gap-4"
       >
         <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <h4 className="font-medium text-gray-900">
               {app.jobs.title}
             </h4>
-            {isToday && (
-              <Badge variant="info">Today</Badge>
+            {isToday && <Badge variant="info">Today</Badge>}
+            {dayProgress && (
+              <Badge variant="default">Day {dayProgress.current} of {dayProgress.total}</Badge>
             )}
           </div>
           <p className="text-sm text-primary-400">
@@ -131,17 +158,24 @@ export default async function MyJobsPage() {
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-sm text-primary-400">
             <span className="flex items-center gap-1">
               <Calendar className="w-4 h-4" />
-              {parseLocalDate(app.jobs.date).toLocaleDateString()}
+              {getJobDateDisplay(app.jobs)}
             </span>
-            <span className="flex items-center gap-1">
-              <Clock className="w-4 h-4" />
-              {app.jobs.start_time} - {app.jobs.end_time} {app.jobs.timezone ? getTimezoneAbbr(app.jobs.timezone) : ''}
-            </span>
+            {app.jobs.start_time && app.jobs.end_time && (
+              <span className="flex items-center gap-1">
+                <Clock className="w-4 h-4" />
+                {app.jobs.start_time} - {app.jobs.end_time} {app.jobs.timezone ? getTimezoneAbbr(app.jobs.timezone) : ''}
+              </span>
+            )}
             <span className="flex items-center gap-1">
               <MapPin className="w-4 h-4" />
-              {app.jobs.location}
+              {getJobLocationDisplay(app.jobs)}
             </span>
           </div>
+          {nextDayInfo && (
+            <p className="mt-2 text-xs text-primary-500 font-medium">
+              Next: {nextDayInfo}
+            </p>
+          )}
           <p className="mt-2 text-sm font-medium text-gray-900">
             ${app.jobs.pay_rate}/hr
           </p>
@@ -149,7 +183,7 @@ export default async function MyJobsPage() {
 
         {showActions && (
           <div className="flex gap-2">
-            {canCheckIn && (
+            {isToday && !isActive && app.status === 'approved' && (
               <Link
                 href={`/dashboard/jobs/${app.jobs.id}/check-in`}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
@@ -164,9 +198,6 @@ export default async function MyJobsPage() {
               >
                 View Active
               </Link>
-            )}
-            {checkIn?.check_out_time && (
-              <Badge variant="success">Completed</Badge>
             )}
             {!isToday && app.status === 'approved' && (
               <Link
@@ -192,8 +223,8 @@ export default async function MyJobsPage() {
       </div>
 
       {/* Active Job */}
-      {activeJobApp && activeCheckIn && (
-        <Link href={`/dashboard/jobs/${activeJobId}/active`}>
+      {activeJobApp && activeCheckInTime && (
+        <Link href={`/dashboard/jobs/${activeJobId}/active`} className="block mb-2">
           <Card className="border-green-300 bg-green-50 hover:bg-green-100 transition-colors cursor-pointer">
             <div className="px-6 py-4 border-b border-green-200">
               <h2 className="text-lg font-semibold text-green-900 flex items-center gap-2">
@@ -209,14 +240,19 @@ export default async function MyJobsPage() {
               <div className="flex items-center justify-between p-4 bg-green-100/50 rounded-lg">
                 <div>
                   <h4 className="font-medium text-green-900">
-                    {(activeJobApp as Application).jobs.title}
+                    {activeJobApp.jobs.title}
                   </h4>
                   <p className="text-sm text-green-800">
-                    {(activeJobApp as Application).jobs.brand}
+                    {activeJobApp.jobs.brand}
                   </p>
                   <p className="text-xs text-green-700 mt-1">
-                    Checked in at {new Date(activeCheckIn.check_in_time).toLocaleTimeString()}
+                    Checked in at {new Date(activeCheckInTime).toLocaleTimeString()}
                   </p>
+                  {getDayProgress(activeJobApp.jobs) && (
+                    <p className="text-xs text-green-700 mt-0.5">
+                      Day {getDayProgress(activeJobApp.jobs)!.current} of {getDayProgress(activeJobApp.jobs)!.total}
+                    </p>
+                  )}
                 </div>
                 <ChevronRight className="w-5 h-5 text-green-600" />
               </div>
@@ -241,7 +277,7 @@ export default async function MyJobsPage() {
             </p>
           ) : (
             <div className="space-y-3">
-              {upcoming.map((app: Application) => renderJobCard(app, true))}
+              {upcoming.map((app) => renderJobCard(app, true))}
             </div>
           )}
         </CardContent>
@@ -263,7 +299,7 @@ export default async function MyJobsPage() {
             </p>
           ) : (
             <div className="space-y-3">
-              {pending.map((app: Application) => (
+              {pending.map((app) => (
                 <div
                   key={app.id}
                   className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
@@ -273,7 +309,7 @@ export default async function MyJobsPage() {
                       {app.jobs.title}
                     </h4>
                     <p className="text-sm text-primary-400">
-                      {app.jobs.brand} - {parseLocalDate(app.jobs.date).toLocaleDateString()}
+                      {app.jobs.brand} - {getJobDateDisplay(app.jobs)}
                     </p>
                     <p className="text-xs text-primary-400 mt-1">
                       Applied {new Date(app.applied_at).toLocaleDateString()}
@@ -299,7 +335,7 @@ export default async function MyJobsPage() {
           </div>
           <CardContent>
             <div className="space-y-3">
-              {completed.slice(0, 5).map((app: Application) => (
+              {completed.slice(0, 5).map((app) => (
                 <div
                   key={app.id}
                   className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
@@ -309,16 +345,14 @@ export default async function MyJobsPage() {
                       {app.jobs.title}
                     </h4>
                     <p className="text-sm text-primary-400">
-                      {app.jobs.brand} - {parseLocalDate(app.jobs.date).toLocaleDateString()}
+                      {app.jobs.brand} - {getJobDateDisplay(app.jobs)}
                     </p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-medium text-gray-900">
                       ${app.jobs.pay_rate}/hr
                     </p>
-                    {checkIns[app.jobs.id]?.check_out_time && (
-                      <Badge variant="success">Completed</Badge>
-                    )}
+                    <Badge variant="success">Completed</Badge>
                   </div>
                 </div>
               ))}
@@ -339,7 +373,7 @@ export default async function MyJobsPage() {
           </div>
           <CardContent>
             <div className="space-y-3">
-              {rejected.map((app: Application) => (
+              {rejected.map((app) => (
                 <div
                   key={app.id}
                   className="flex items-center justify-between p-4 bg-gray-50 rounded-lg opacity-75"
@@ -349,7 +383,7 @@ export default async function MyJobsPage() {
                       {app.jobs.title}
                     </h4>
                     <p className="text-sm text-primary-400">
-                      {app.jobs.brand} - {parseLocalDate(app.jobs.date).toLocaleDateString()}
+                      {app.jobs.brand} - {getJobDateDisplay(app.jobs)}
                     </p>
                   </div>
                   <Badge variant="error">Rejected</Badge>

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button, Input, Card, CardContent, CardHeader, CardTitle, Alert, Badge, Avatar } from '@/components/ui'
 import { ImagePlus, FileText } from 'lucide-react'
 import type { BAProfile, BAPhoto } from '@/types'
+import { getImpersonatedBAId } from '@/lib/impersonation'
 
 const daysOfWeek = [
   'Monday',
@@ -47,11 +48,11 @@ export default function ProfilePage() {
         return
       }
 
-      const { data: profileData, error: profileError } = await supabase
-        .from('ba_profiles')
-        .select('*, users(email)')
-        .eq('user_id', user.id)
-        .single()
+      const impersonatedId = getImpersonatedBAId()
+      const profileQuery = impersonatedId
+        ? supabase.from('ba_profiles').select('*, users(email)').eq('id', impersonatedId).single()
+        : supabase.from('ba_profiles').select('*, users(email)').eq('user_id', user.id).single()
+      const { data: profileData, error: profileError } = await profileQuery
 
       if (profileError || !profileData) {
         router.push('/auth/setup')
@@ -100,14 +101,35 @@ export default function ProfilePage() {
     setIsSaving(true)
 
     try {
+      const updateData: Record<string, unknown> = {
+        phone: phone.trim(),
+        zip_code: zipCode.trim(),
+        availability,
+        updated_at: new Date().toISOString(),
+      }
+
+      // Re-geocode if zip code changed
+      if (zipCode.trim() !== profile.zip_code) {
+        try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+          const { data: { session } } = await supabase.auth.getSession()
+          const geoRes = await fetch(`${apiUrl}/api/bas/geocode-zip?zip_code=${zipCode.trim()}`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${session?.access_token}` },
+          })
+          if (geoRes.ok) {
+            const geo = await geoRes.json()
+            updateData.latitude = geo.latitude
+            updateData.longitude = geo.longitude
+          }
+        } catch {
+          // Geocoding failure is non-blocking
+        }
+      }
+
       const { error: updateError } = await supabase
         .from('ba_profiles')
-        .update({
-          phone: phone.trim(),
-          zip_code: zipCode.trim(),
-          availability,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updateData)
         .eq('id', profile.id)
 
       if (updateError) {
@@ -120,6 +142,8 @@ export default function ProfilePage() {
         phone: phone.trim(),
         zip_code: zipCode.trim(),
         availability,
+        latitude: updateData.latitude as number | undefined ?? profile.latitude,
+        longitude: updateData.longitude as number | undefined ?? profile.longitude,
       })
       setSuccess('Profile updated successfully')
       setIsEditing(false)
@@ -213,13 +237,16 @@ export default function ProfilePage() {
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="(555) 123-4567"
               />
-              <Input
-                label="ZIP Code"
-                value={zipCode}
-                onChange={(e) => setZipCode(e.target.value.replace(/\D/g, '').slice(0, 5))}
-                placeholder="12345"
-                maxLength={5}
-              />
+              <div>
+                <Input
+                  label="Work Area ZIP Code"
+                  value={zipCode}
+                  onChange={(e) => setZipCode(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                  placeholder="12345"
+                  maxLength={5}
+                />
+                <p className="text-xs text-primary-400 mt-1">Enter the ZIP code where you&apos;d like to find work</p>
+              </div>
               <div className="flex gap-3 pt-4">
                 <Button
                   variant="outline"
@@ -254,7 +281,7 @@ export default function ProfilePage() {
                 <p className="font-medium text-gray-900">{profile.phone}</p>
               </div>
               <div>
-                <p className="text-sm text-primary-400">ZIP Code</p>
+                <p className="text-sm text-primary-400">Work Area ZIP Code</p>
                 <p className="font-medium text-gray-900">{profile.zip_code}</p>
               </div>
               <div>

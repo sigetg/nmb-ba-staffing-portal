@@ -2,8 +2,10 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { Menu, LogOut } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Menu, LogOut, Eye, X } from 'lucide-react'
 import { Avatar } from '@/components/ui/avatar'
+import { stopImpersonation } from '@/lib/actions/impersonation'
 
 interface HeaderProps {
   user?: {
@@ -14,6 +16,7 @@ interface HeaderProps {
   onLogout?: () => void
   showMobileMenuButton?: boolean
   onMobileMenuClick?: () => void
+  impersonation?: { baName: string; baId: string } | null
 }
 
 export function Header({
@@ -21,7 +24,15 @@ export function Header({
   onLogout,
   showMobileMenuButton = false,
   onMobileMenuClick,
+  impersonation,
 }: HeaderProps) {
+  const router = useRouter()
+
+  const handleExitImpersonation = async () => {
+    await stopImpersonation()
+    router.push(`/admin/bas/${impersonation?.baId}`)
+  }
+
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-gray-200">
       <div className="flex items-center justify-between h-16 px-4 sm:px-6">
@@ -49,6 +60,20 @@ export function Header({
         </div>
 
         <div className="flex items-center gap-4">
+          {impersonation && (
+            <div className="flex items-center gap-2 bg-amber-100 text-amber-900 border border-amber-300 rounded-full px-3 py-1 text-sm">
+              <Eye className="w-3.5 h-3.5" />
+              <span className="font-medium">Logged in as {impersonation.baName}</span>
+              <button
+                type="button"
+                onClick={handleExitImpersonation}
+                className="ml-1 p-0.5 rounded-full hover:bg-amber-200 transition-colors"
+                title="Exit impersonation"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
           {user ? (
             <div className="flex items-center gap-3">
               <div className="hidden sm:block text-right">

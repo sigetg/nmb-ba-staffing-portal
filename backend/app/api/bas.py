@@ -1,13 +1,38 @@
 from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from enum import Enum
 from datetime import datetime
+import httpx
+import logging
 
 from app.core.auth import get_current_user, get_current_ba, get_current_admin, CurrentUser
 from app.core.supabase import get_supabase_client
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def geocode_zip(zip_code: str) -> Tuple[float, float] | None:
+    """Geocode a US zip code using Google Maps Geocoding API. Returns (lat, lng) or None."""
+    if not settings.google_maps_api_key:
+        logger.warning("Google Maps API key not configured, skipping geocoding")
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                "https://maps.googleapis.com/maps/api/geocode/json",
+                params={"address": zip_code, "components": "country:US", "key": settings.google_maps_api_key},
+            )
+            data = resp.json()
+            if data.get("status") == "OK" and data.get("results"):
+                loc = data["results"][0]["geometry"]["location"]
+                return (loc["lat"], loc["lng"])
+    except Exception as e:
+        logger.error(f"Geocoding failed for zip {zip_code}: {e}")
+    return None
 
 
 class BAStatus(str, Enum):
@@ -54,6 +79,8 @@ class BAProfileResponse(BaseModel):
     resume_url: Optional[str] = None
     has_seen_welcome: Optional[bool] = None
     stripe_account_id: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     created_at: str
     updated_at: Optional[str] = None
 
@@ -223,6 +250,18 @@ async def update_profile(
         raise HTTPException(status_code=500, detail="Failed to update profile")
 
     return BAProfileResponse(**result.data[0])
+
+
+@router.post("/geocode-zip")
+async def geocode_zip_endpoint(
+    zip_code: str = Query(..., min_length=5, max_length=5),
+    current_user: CurrentUser = Depends(get_current_ba),
+):
+    """Geocode a zip code and return lat/lng. Optionally updates the BA's profile."""
+    result = await geocode_zip(zip_code)
+    if result is None:
+        return {"latitude": None, "longitude": None}
+    return {"latitude": result[0], "longitude": result[1]}
 
 
 @router.get("/{ba_id}", response_model=BAProfileResponse)

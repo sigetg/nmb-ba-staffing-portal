@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { PartyPopper } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent } from '@/components/ui'
+import { getImpersonatedBAId } from '@/lib/impersonation'
 
 export default function WelcomePage() {
   const router = useRouter()
@@ -19,10 +20,12 @@ export default function WelcomePage() {
       }
 
       // Mark welcome as seen
-      await supabase
-        .from('ba_profiles')
-        .update({ has_seen_welcome: true })
-        .eq('user_id', user.id)
+      const impersonatedId = getImpersonatedBAId()
+      if (impersonatedId) {
+        await supabase.from('ba_profiles').update({ has_seen_welcome: true }).eq('id', impersonatedId)
+      } else {
+        await supabase.from('ba_profiles').update({ has_seen_welcome: true }).eq('user_id', user.id)
+      }
     }
 
     markWelcomeSeen()

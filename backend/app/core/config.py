@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
+from pydantic import computed_field
 from typing import List
 
 
@@ -19,15 +19,13 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
 
-    # CORS
-    cors_origins: List[str] = ["http://localhost:3001", "http://127.0.0.1:3001"]
+    # CORS - stored as comma-separated string to avoid pydantic-settings JSON parsing
+    cors_origins: str = "http://localhost:3001,http://127.0.0.1:3001"
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, v):
-        if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
+    @computed_field
+    @property
+    def cors_origins_list(self) -> List[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
     # Stripe
     stripe_secret_key: str = ""
@@ -46,9 +44,12 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_phone_number: str = ""
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    # Dropbox
+    dropbox_app_key: str = ""
+    dropbox_app_secret: str = ""
+    dropbox_refresh_token: str = ""
+
+    model_config = {"env_file": ".env", "case_sensitive": False}
 
 
 settings = Settings()
