@@ -1,32 +1,36 @@
-from fastapi import APIRouter, HTTPException, Query, Depends
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
-from enum import Enum
 import math
+from datetime import datetime
+from enum import StrEnum
 
-from app.core.auth import get_current_user, get_current_admin, get_current_ba, CurrentUser, get_optional_user
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from timezonefinder import TimezoneFinder
+
+from app.core.auth import (
+    CurrentUser,
+    get_current_admin,
+    get_current_ba,
+    get_optional_user,
+)
 from app.core.supabase import get_supabase_client
+from app.models.job import (
+    SkipLocationRequest,
+)
 from app.services.email import (
     get_ba_email,
     get_job_display_info,
     send_application_confirmed_email,
     send_job_cancelled_email,
 )
-from app.models.job import (
-    MultiDayJobCreate,
-    LocationCheckInRequest,
-    LocationCheckOutRequest,
-    SkipLocationRequest,
-)
-from timezonefinder import TimezoneFinder
 
 _tf = TimezoneFinder()
 
 DEFAULT_TIMEZONE = "America/Chicago"
 
 
-def _detect_timezone(latitude: Optional[float], longitude: Optional[float], explicit_tz: Optional[str] = None) -> str:
+def _detect_timezone(
+    latitude: float | None, longitude: float | None, explicit_tz: str | None = None
+) -> str:
     """Detect timezone from lat/lng, or use explicit value, or fall back to default."""
     if explicit_tz:
         return explicit_tz
@@ -36,84 +40,85 @@ def _detect_timezone(latitude: Optional[float], longitude: Optional[float], expl
             return detected
     return DEFAULT_TIMEZONE
 
+
 router = APIRouter()
 
 # Maximum distance in meters for valid check-in
 MAX_CHECKIN_DISTANCE_METERS = 200
 
 
-class JobStatus(str, Enum):
+class JobStatus(StrEnum):
     DRAFT = "draft"
     PUBLISHED = "published"
     CANCELLED = "cancelled"
 
 
 class CheckoutResponseValueIn(BaseModel):
-    kpi_id: Optional[str] = None
-    question_id: Optional[str] = None
-    numeric_value: Optional[float] = None
-    text_value: Optional[str] = None
-    option_id: Optional[str] = None
+    kpi_id: str | None = None
+    question_id: str | None = None
+    numeric_value: float | None = None
+    text_value: str | None = None
+    option_id: str | None = None
 
 
 class JobCreate(BaseModel):
     title: str
     brand: str
     description: str
-    location: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    date: Optional[str] = None  # YYYY-MM-DD
-    start_time: Optional[str] = None  # HH:MM
-    end_time: Optional[str] = None  # HH:MM
+    location: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    date: str | None = None  # YYYY-MM-DD
+    start_time: str | None = None  # HH:MM
+    end_time: str | None = None  # HH:MM
     pay_rate: float
     slots: int
-    worksheet_url: Optional[str] = None
+    worksheet_url: str | None = None
     status: JobStatus = JobStatus.DRAFT
-    timezone: Optional[str] = None
-    job_type_id: Optional[str] = None
+    timezone: str | None = None
+    job_type_id: str | None = None
     # Multi-day support
-    days: Optional[List[dict]] = None
+    days: list[dict] | None = None
 
 
 class JobUpdate(BaseModel):
-    title: Optional[str] = None
-    brand: Optional[str] = None
-    description: Optional[str] = None
-    location: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    date: Optional[str] = None
-    start_time: Optional[str] = None
-    end_time: Optional[str] = None
-    pay_rate: Optional[float] = None
-    slots: Optional[int] = None
-    status: Optional[JobStatus] = None
-    worksheet_url: Optional[str] = None
-    timezone: Optional[str] = None
-    job_type_id: Optional[str] = None
+    title: str | None = None
+    brand: str | None = None
+    description: str | None = None
+    location: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    date: str | None = None
+    start_time: str | None = None
+    end_time: str | None = None
+    pay_rate: float | None = None
+    slots: int | None = None
+    status: JobStatus | None = None
+    worksheet_url: str | None = None
+    timezone: str | None = None
+    job_type_id: str | None = None
     # Multi-day support
-    days: Optional[List[dict]] = None
+    days: list[dict] | None = None
 
 
 class CheckInRequest(BaseModel):
     latitude: float
     longitude: float
     # Multi-location support
-    job_day_location_id: Optional[str] = None
+    job_day_location_id: str | None = None
     gps_override: bool = False
-    gps_override_reason: Optional[str] = None
+    gps_override_reason: str | None = None
 
 
 class CheckOutRequest(BaseModel):
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    notes: Optional[str] = None
+    latitude: float | None = None
+    longitude: float | None = None
+    notes: str | None = None
     # Multi-location support
-    job_day_location_id: Optional[str] = None
+    job_day_location_id: str | None = None
     is_end_of_day: bool = False
     # Dynamic checkout responses
-    checkout_responses: Optional[List[CheckoutResponseValueIn]] = None
+    checkout_responses: list[CheckoutResponseValueIn] | None = None
 
 
 def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -125,22 +130,27 @@ def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     delta_phi = math.radians(lat2 - lat1)
     delta_lambda = math.radians(lon2 - lon1)
 
-    a = math.sin(delta_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    a = (
+        math.sin(delta_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+    )
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     return R * c
 
 
-def _insert_job_days(supabase, job_id: str, days: List[dict], timezone: str):
+def _insert_job_days(supabase, job_id: str, days: list[dict], timezone: str):
     """Insert job_days and job_day_locations for a job."""
     for i, day in enumerate(days):
         day_result = (
             supabase.table("job_days")
-            .insert({
-                "job_id": job_id,
-                "date": day["date"],
-                "sort_order": day.get("sort_order", i),
-            })
+            .insert(
+                {
+                    "job_id": job_id,
+                    "date": day["date"],
+                    "sort_order": day.get("sort_order", i),
+                }
+            )
             .execute()
         )
         if not day_result.data:
@@ -151,16 +161,18 @@ def _insert_job_days(supabase, job_id: str, days: List[dict], timezone: str):
         for j, loc in enumerate(day.get("locations", [])):
             loc_result = (
                 supabase.table("job_day_locations")
-                .insert({
-                    "job_day_id": day_id,
-                    "job_id": job_id,
-                    "location": loc["location"],
-                    "latitude": loc.get("latitude"),
-                    "longitude": loc.get("longitude"),
-                    "start_time": loc["start_time"],
-                    "end_time": loc["end_time"],
-                    "sort_order": loc.get("sort_order", j),
-                })
+                .insert(
+                    {
+                        "job_day_id": day_id,
+                        "job_id": job_id,
+                        "location": loc["location"],
+                        "latitude": loc.get("latitude"),
+                        "longitude": loc.get("longitude"),
+                        "start_time": loc["start_time"],
+                        "end_time": loc["end_time"],
+                        "sort_order": loc.get("sort_order", j),
+                    }
+                )
                 .execute()
             )
             if not loc_result.data:
@@ -169,13 +181,13 @@ def _insert_job_days(supabase, job_id: str, days: List[dict], timezone: str):
 
 @router.get("/", response_model=dict)
 async def list_jobs(
-    status: Optional[JobStatus] = None,
-    brand: Optional[str] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
+    status: JobStatus | None = None,
+    brand: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = Query(20, le=100),
     offset: int = 0,
-    current_user: Optional[CurrentUser] = Depends(get_optional_user),
+    current_user: CurrentUser | None = Depends(get_optional_user),
 ):
     """List all jobs with optional filters."""
     supabase = get_supabase_client()
@@ -229,7 +241,7 @@ async def get_job(job_id: str):
         job["job_days"].sort(key=lambda d: d.get("sort_order", 0))
         for day in job["job_days"]:
             if day.get("job_day_locations"):
-                day["job_day_locations"].sort(key=lambda l: l.get("sort_order", 0))
+                day["job_day_locations"].sort(key=lambda loc: loc.get("sort_order", 0))
 
     return job
 
@@ -320,8 +332,21 @@ async def update_job(
 
     # Build update data
     update_data = {}
-    for field in ["title", "brand", "description", "location", "latitude", "longitude",
-                   "date", "start_time", "end_time", "pay_rate", "slots", "worksheet_url", "job_type_id"]:
+    for field in [
+        "title",
+        "brand",
+        "description",
+        "location",
+        "latitude",
+        "longitude",
+        "date",
+        "start_time",
+        "end_time",
+        "pay_rate",
+        "slots",
+        "worksheet_url",
+        "job_type_id",
+    ]:
         val = getattr(job, field, None)
         if val is not None:
             update_data[field] = val
@@ -429,7 +454,9 @@ async def apply_to_job(
         raise HTTPException(status_code=404, detail="BA profile not found")
 
     if profile.data["status"] != "approved":
-        raise HTTPException(status_code=403, detail="Your profile must be approved to apply for jobs")
+        raise HTTPException(
+            status_code=403, detail="Your profile must be approved to apply for jobs"
+        )
 
     ba_id = profile.data["id"]
 
@@ -460,12 +487,14 @@ async def apply_to_job(
 
     result = (
         supabase.table("job_applications")
-        .insert({
-            "job_id": job_id,
-            "ba_id": ba_id,
-            "status": "pending",
-            "applied_at": datetime.utcnow().isoformat(),
-        })
+        .insert(
+            {
+                "job_id": job_id,
+                "ba_id": ba_id,
+                "status": "pending",
+                "applied_at": datetime.utcnow().isoformat(),
+            }
+        )
         .execute()
     )
 
@@ -516,11 +545,7 @@ async def check_in(
     supabase = get_supabase_client()
 
     profile = (
-        supabase.table("ba_profiles")
-        .select("id")
-        .eq("user_id", current_user.id)
-        .single()
-        .execute()
+        supabase.table("ba_profiles").select("id").eq("user_id", current_user.id).single().execute()
     )
 
     if not profile.data:
@@ -567,7 +592,9 @@ async def check_in(
         )
 
         if existing.data:
-            raise HTTPException(status_code=400, detail="You have already checked in to this location")
+            raise HTTPException(
+                status_code=400, detail="You have already checked in to this location"
+            )
 
         # Validate GPS distance
         distance = None
@@ -588,15 +615,17 @@ async def check_in(
         # Create location check-in
         result = (
             supabase.table("location_check_ins")
-            .insert({
-                "job_day_location_id": check_in_data.job_day_location_id,
-                "ba_id": ba_id,
-                "check_in_time": datetime.utcnow().isoformat(),
-                "check_in_latitude": check_in_data.latitude,
-                "check_in_longitude": check_in_data.longitude,
-                "check_in_gps_override": check_in_data.gps_override,
-                "check_in_gps_override_explanation": check_in_data.gps_override_reason,
-            })
+            .insert(
+                {
+                    "job_day_location_id": check_in_data.job_day_location_id,
+                    "ba_id": ba_id,
+                    "check_in_time": datetime.utcnow().isoformat(),
+                    "check_in_latitude": check_in_data.latitude,
+                    "check_in_longitude": check_in_data.longitude,
+                    "check_in_gps_override": check_in_data.gps_override,
+                    "check_in_gps_override_explanation": check_in_data.gps_override_reason,
+                }
+            )
             .execute()
         )
 
@@ -644,13 +673,15 @@ async def check_in(
 
     result = (
         supabase.table("check_ins")
-        .insert({
-            "job_id": job_id,
-            "ba_id": ba_id,
-            "check_in_time": datetime.utcnow().isoformat(),
-            "check_in_latitude": check_in_data.latitude,
-            "check_in_longitude": check_in_data.longitude,
-        })
+        .insert(
+            {
+                "job_id": job_id,
+                "ba_id": ba_id,
+                "check_in_time": datetime.utcnow().isoformat(),
+                "check_in_latitude": check_in_data.latitude,
+                "check_in_longitude": check_in_data.longitude,
+            }
+        )
         .execute()
     )
 
@@ -679,11 +710,7 @@ async def check_out(
     supabase = get_supabase_client()
 
     profile = (
-        supabase.table("ba_profiles")
-        .select("id")
-        .eq("user_id", current_user.id)
-        .single()
-        .execute()
+        supabase.table("ba_profiles").select("id").eq("user_id", current_user.id).single().execute()
     )
 
     if not profile.data:
@@ -706,7 +733,9 @@ async def check_out(
             raise HTTPException(status_code=400, detail="You have not checked in to this location")
 
         if checkin.data.get("check_out_time"):
-            raise HTTPException(status_code=400, detail="You have already checked out from this location")
+            raise HTTPException(
+                status_code=400, detail="You have already checked out from this location"
+            )
 
         now = datetime.utcnow().isoformat()
 
@@ -731,11 +760,13 @@ async def check_out(
         if check_out_data.is_end_of_day and check_out_data.checkout_responses:
             resp_result = (
                 supabase.table("checkout_responses")
-                .insert({
-                    "job_id": job_id,
-                    "ba_id": ba_id,
-                    "location_check_in_id": checkin.data["id"],
-                })
+                .insert(
+                    {
+                        "job_id": job_id,
+                        "ba_id": ba_id,
+                        "location_check_in_id": checkin.data["id"],
+                    }
+                )
                 .execute()
             )
             if resp_result.data:
@@ -759,11 +790,13 @@ async def check_out(
         if not check_out_data.is_end_of_day:
             travel_result = (
                 supabase.table("travel_logs")
-                .insert({
-                    "ba_id": ba_id,
-                    "from_location_check_in_id": checkin.data["id"],
-                    "departure_time": now,
-                })
+                .insert(
+                    {
+                        "ba_id": ba_id,
+                        "from_location_check_in_id": checkin.data["id"],
+                        "departure_time": now,
+                    }
+                )
                 .execute()
             )
             if travel_result.data:
@@ -799,11 +832,13 @@ async def check_out(
 
     result = (
         supabase.table("check_ins")
-        .update({
-            "check_out_time": datetime.utcnow().isoformat(),
-            "check_out_latitude": check_out_data.latitude,
-            "check_out_longitude": check_out_data.longitude,
-        })
+        .update(
+            {
+                "check_out_time": datetime.utcnow().isoformat(),
+                "check_out_latitude": check_out_data.latitude,
+                "check_out_longitude": check_out_data.longitude,
+            }
+        )
         .eq("id", checkin.data["id"])
         .execute()
     )
@@ -815,11 +850,13 @@ async def check_out(
     if check_out_data.checkout_responses:
         resp_result = (
             supabase.table("checkout_responses")
-            .insert({
-                "job_id": job_id,
-                "ba_id": ba_id,
-                "check_in_id": checkin.data["id"],
-            })
+            .insert(
+                {
+                    "job_id": job_id,
+                    "ba_id": ba_id,
+                    "check_in_id": checkin.data["id"],
+                }
+            )
             .execute()
         )
         if resp_result.data:
@@ -859,11 +896,7 @@ async def skip_location(
     supabase = get_supabase_client()
 
     profile = (
-        supabase.table("ba_profiles")
-        .select("id")
-        .eq("user_id", current_user.id)
-        .single()
-        .execute()
+        supabase.table("ba_profiles").select("id").eq("user_id", current_user.id).single().execute()
     )
 
     if not profile.data:
@@ -895,19 +928,23 @@ async def skip_location(
     )
 
     if existing.data:
-        supabase.table("location_check_ins").update({
-            "skipped": True,
-            "skipped_reason": skip_data.reason,
-        }).eq("id", existing.data["id"]).execute()
+        supabase.table("location_check_ins").update(
+            {
+                "skipped": True,
+                "skipped_reason": skip_data.reason,
+            }
+        ).eq("id", existing.data["id"]).execute()
     else:
-        supabase.table("location_check_ins").insert({
-            "job_day_location_id": location_id,
-            "ba_id": ba_id,
-            "check_in_latitude": 0,
-            "check_in_longitude": 0,
-            "skipped": True,
-            "skipped_reason": skip_data.reason,
-        }).execute()
+        supabase.table("location_check_ins").insert(
+            {
+                "job_day_location_id": location_id,
+                "ba_id": ba_id,
+                "check_in_latitude": 0,
+                "check_in_longitude": 0,
+                "skipped": True,
+                "skipped_reason": skip_data.reason,
+            }
+        ).execute()
 
     return {"message": "Location skipped", "location_id": location_id}
 
@@ -922,11 +959,7 @@ async def record_travel_arrival(
     supabase = get_supabase_client()
 
     profile = (
-        supabase.table("ba_profiles")
-        .select("id")
-        .eq("user_id", current_user.id)
-        .single()
-        .execute()
+        supabase.table("ba_profiles").select("id").eq("user_id", current_user.id).single().execute()
     )
 
     if not profile.data:
@@ -955,11 +988,7 @@ async def get_my_job_progress(
     supabase = get_supabase_client()
 
     profile = (
-        supabase.table("ba_profiles")
-        .select("id")
-        .eq("user_id", current_user.id)
-        .single()
-        .execute()
+        supabase.table("ba_profiles").select("id").eq("user_id", current_user.id).single().execute()
     )
 
     if not profile.data:

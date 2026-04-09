@@ -1,7 +1,7 @@
 'use client'
 
 import { useWizard, LocationData } from './wizard-context'
-import { Input, AddressAutocomplete, Button } from '@/components/ui'
+import { Input, AddressAutocomplete } from '@/components/ui'
 import { Trash2, ChevronUp, ChevronDown, GripVertical } from 'lucide-react'
 
 interface DayLocationFormProps {

@@ -4,11 +4,11 @@ import { NextResponse, type NextRequest } from 'next/server'
 // Routes that don't require authentication
 const publicRoutes = ['/', '/auth/login', '/auth/register', '/auth/setup', '/auth/callback', '/auth/forgot-password', '/auth/reset-password', '/admin/login', '/health']
 
-// Routes that require admin role
-const adminRoutes = ['/admin']
+// Routes that require admin role (used for future role-based routing)
+const _adminRoutes = ['/admin']
 
-// Routes that require BA role
-const baRoutes = ['/dashboard']
+// Routes that require BA role (used for future role-based routing)
+const _baRoutes = ['/dashboard']
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({

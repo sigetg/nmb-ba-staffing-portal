@@ -77,7 +77,7 @@ export function Modal({
   return createPortal(modalContent, document.body)
 }
 
-interface ModalHeaderProps extends HTMLAttributes<HTMLDivElement> {}
+type ModalHeaderProps = HTMLAttributes<HTMLDivElement>
 
 export const ModalHeader = forwardRef<HTMLDivElement, ModalHeaderProps>(
   ({ className = '', children, ...props }, ref) => (
@@ -93,7 +93,7 @@ export const ModalHeader = forwardRef<HTMLDivElement, ModalHeaderProps>(
 
 ModalHeader.displayName = 'ModalHeader'
 
-interface ModalTitleProps extends HTMLAttributes<HTMLHeadingElement> {}
+type ModalTitleProps = HTMLAttributes<HTMLHeadingElement>
 
 export const ModalTitle = forwardRef<HTMLHeadingElement, ModalTitleProps>(
   ({ className = '', children, ...props }, ref) => (
@@ -109,7 +109,7 @@ export const ModalTitle = forwardRef<HTMLHeadingElement, ModalTitleProps>(
 
 ModalTitle.displayName = 'ModalTitle'
 
-interface ModalContentProps extends HTMLAttributes<HTMLDivElement> {}
+type ModalContentProps = HTMLAttributes<HTMLDivElement>
 
 export const ModalContent = forwardRef<HTMLDivElement, ModalContentProps>(
   ({ className = '', children, ...props }, ref) => (
@@ -121,7 +121,7 @@ export const ModalContent = forwardRef<HTMLDivElement, ModalContentProps>(
 
 ModalContent.displayName = 'ModalContent'
 
-interface ModalFooterProps extends HTMLAttributes<HTMLDivElement> {}
+type ModalFooterProps = HTMLAttributes<HTMLDivElement>
 
 export const ModalFooter = forwardRef<HTMLDivElement, ModalFooterProps>(
   ({ className = '', children, ...props }, ref) => (

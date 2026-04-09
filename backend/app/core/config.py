@@ -1,6 +1,5 @@
-from pydantic_settings import BaseSettings
 from pydantic import computed_field
-from typing import List
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -24,7 +23,7 @@ class Settings(BaseSettings):
 
     @computed_field
     @property
-    def cors_origins_list(self) -> List[str]:
+    def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
     # Stripe

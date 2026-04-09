@@ -103,11 +103,38 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
   const approvedApplications = typedApplications.filter(a => a.status === 'approved')
 
   const isMultiDay = (typedJob.job_days || []).length > 0
-  const displayStatus = isMultiDay
+  let displayStatus = isMultiDay
     ? getMultiDayDisplayStatus(job as import('@/types').JobWithDays)
     : typedJob.date && typedJob.start_time && typedJob.end_time
       ? getJobDisplayStatus({ status: typedJob.status, date: typedJob.date, start_time: typedJob.start_time, end_time: typedJob.end_time, timezone: typedJob.timezone })
       : typedJob.status === 'draft' ? 'draft' : typedJob.status === 'cancelled' ? 'cancelled' : typedJob.status === 'archived' ? 'archived' : 'in_progress'
+
+  // Enhanced completion: if in_progress and all approved BAs have checked out, mark as completed
+  if (displayStatus === 'in_progress' && approvedApplications.length > 0) {
+    if (isMultiDay) {
+      // Multi-day: check if all approved BAs have checked out of ALL locations on the final day
+      const sortedJobDays = [...(typedJob.job_days || [])].sort((a, b) => a.date.localeCompare(b.date))
+      const finalDay = sortedJobDays[sortedJobDays.length - 1]
+      if (finalDay) {
+        const finalDayLocationIds = new Set((finalDay.job_day_locations || []).map((l: JobDayLocation) => l.id))
+        const allComplete = approvedApplications.every(app => {
+          // For each location on the final day, BA must have a check-out
+          return Array.from(finalDayLocationIds).every(locId => {
+            const ci = locationCheckIns.find(c => c.job_day_location_id === locId && c.ba_id === app.ba_id)
+            return ci && ci.check_out_time
+          })
+        })
+        if (allComplete) displayStatus = 'completed'
+      }
+    } else {
+      // Legacy: check if all approved BAs have a check_out_time
+      const allComplete = approvedApplications.every(app => {
+        const ci = typedCheckIns.find(c => c.ba_id === app.ba_id)
+        return ci && ci.check_out_time
+      })
+      if (allComplete) displayStatus = 'completed'
+    }
+  }
 
   // Sort days and locations
   const sortedDays = [...(typedJob.job_days || [])].sort((a, b) => a.sort_order - b.sort_order)

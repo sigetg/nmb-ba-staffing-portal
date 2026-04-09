@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Briefcase, Eye, Pencil, ChevronUp, ChevronDown, ArrowUpDown, FileBarChart } from 'lucide-react'
 import { formatJobStatus, getJobStatusBadgeVariant, getMultiDayDisplayStatus, getJobDateDisplay, getJobLocationDisplay } from '@/lib/utils'
 import { JobActions } from '@/components/admin/job-actions'
-import type { JobWithDays, DisplayJobStatus, JobStatus } from '@/types'
+import type { JobWithDays, JobStatus } from '@/types'
 
 type SortColumn = 'title' | 'date' | 'location' | 'slots' | 'pay_rate' | 'status'
 type SortDirection = 'asc' | 'desc'

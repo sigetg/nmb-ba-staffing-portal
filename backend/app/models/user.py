@@ -1,10 +1,10 @@
-from pydantic import BaseModel, EmailStr
 from datetime import datetime
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
+
+from pydantic import BaseModel, EmailStr
 
 
-class UserRole(str, Enum):
+class UserRole(StrEnum):
     BA = "ba"
     ADMIN = "admin"
 
@@ -14,7 +14,7 @@ class User(BaseModel):
     email: EmailStr
     role: UserRole
     created_at: datetime
-    updated_at: Optional[datetime] = None
+    updated_at: datetime | None = None
 
     class Config:
         from_attributes = True

@@ -1,9 +1,8 @@
 'use client'
 
-import { useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import type { JobType, JobTypeKpi, JobTypeQuestion } from '@/types'
+import type { JobType } from '@/types'
 
 export interface CheckoutResponseValueData {
   kpi_id?: string | null

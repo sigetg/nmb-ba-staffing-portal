@@ -1,10 +1,10 @@
-from pydantic import BaseModel
 from datetime import datetime
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
+
+from pydantic import BaseModel
 
 
-class ApplicationStatus(str, Enum):
+class ApplicationStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
@@ -17,9 +17,9 @@ class JobApplication(BaseModel):
     ba_id: str
     status: ApplicationStatus = ApplicationStatus.PENDING
     applied_at: datetime
-    reviewed_at: Optional[datetime] = None
-    reviewed_by: Optional[str] = None
-    notes: Optional[str] = None
+    reviewed_at: datetime | None = None
+    reviewed_by: str | None = None
+    notes: str | None = None
 
     class Config:
         from_attributes = True

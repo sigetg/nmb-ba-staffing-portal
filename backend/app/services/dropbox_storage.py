@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 import dropbox
 from dropbox.exceptions import ApiError
@@ -12,7 +11,7 @@ logger = logging.getLogger(__name__)
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
 ALLOWED_PDF_TYPES = {"application/pdf"}
 
-_dbx_client: Optional[dropbox.Dropbox] = None
+_dbx_client: dropbox.Dropbox | None = None
 
 
 def get_client() -> dropbox.Dropbox:
@@ -52,7 +51,7 @@ def upload_file(file_bytes: bytes, dropbox_path: str) -> str:
             if links:
                 url = links[0].url
             else:
-                raise RuntimeError(f"Shared link exists but not found for {dropbox_path}")
+                raise RuntimeError(f"Shared link exists but not found for {dropbox_path}") from e
         else:
             raise
 
@@ -72,21 +71,29 @@ def delete_file(dropbox_path: str) -> None:
             raise
 
 
-def validate_image(file_bytes: bytes, content_type: str, filename: str, max_size_mb: float = 5) -> None:
+def validate_image(
+    file_bytes: bytes, content_type: str, filename: str, max_size_mb: float = 5
+) -> None:
     """Validate an image file. Raises ValueError on failure."""
     if content_type not in ALLOWED_IMAGE_TYPES:
         raise ValueError(f"Invalid image type '{content_type}'. Allowed: JPEG, PNG, WebP, HEIC")
 
     max_bytes = int(max_size_mb * 1024 * 1024)
     if len(file_bytes) > max_bytes:
-        raise ValueError(f"Image too large ({len(file_bytes) / (1024*1024):.1f}MB). Max: {max_size_mb}MB")
+        raise ValueError(
+            f"Image too large ({len(file_bytes) / (1024 * 1024):.1f}MB). Max: {max_size_mb}MB"
+        )
 
 
-def validate_pdf(file_bytes: bytes, content_type: str, filename: str, max_size_mb: float = 10) -> None:
+def validate_pdf(
+    file_bytes: bytes, content_type: str, filename: str, max_size_mb: float = 10
+) -> None:
     """Validate a PDF file. Raises ValueError on failure."""
     if content_type not in ALLOWED_PDF_TYPES:
         raise ValueError(f"Invalid file type '{content_type}'. Must be PDF")
 
     max_bytes = int(max_size_mb * 1024 * 1024)
     if len(file_bytes) > max_bytes:
-        raise ValueError(f"PDF too large ({len(file_bytes) / (1024*1024):.1f}MB). Max: {max_size_mb}MB")
+        raise ValueError(
+            f"PDF too large ({len(file_bytes) / (1024 * 1024):.1f}MB). Max: {max_size_mb}MB"
+        )

@@ -1,8 +1,7 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List
 
-from app.core.auth import get_current_user, get_current_admin, CurrentUser
+from app.core.auth import CurrentUser, get_current_admin, get_current_user
 from app.core.supabase import get_supabase_client
 
 router = APIRouter()
@@ -10,12 +9,12 @@ router = APIRouter()
 
 class JobTypeCreate(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 class JobTypeUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
 
 
 class KpiCreate(BaseModel):
@@ -27,10 +26,10 @@ class KpiCreate(BaseModel):
 
 
 class KpiUpdate(BaseModel):
-    name: Optional[str] = None
-    label: Optional[str] = None
-    aggregation: Optional[str] = None
-    sort_order: Optional[int] = None
+    name: str | None = None
+    label: str | None = None
+    aggregation: str | None = None
+    sort_order: int | None = None
 
 
 class QuestionOptionIn(BaseModel):
@@ -43,15 +42,15 @@ class QuestionCreate(BaseModel):
     question_type: str  # 'multiple_choice' or 'free_text'
     is_required: bool = False
     sort_order: int = 0
-    options: Optional[List[QuestionOptionIn]] = None
+    options: list[QuestionOptionIn] | None = None
 
 
 class QuestionUpdate(BaseModel):
-    question_text: Optional[str] = None
-    question_type: Optional[str] = None
-    is_required: Optional[bool] = None
-    sort_order: Optional[int] = None
-    options: Optional[List[QuestionOptionIn]] = None
+    question_text: str | None = None
+    question_type: str | None = None
+    is_required: bool | None = None
+    sort_order: int | None = None
+    options: list[QuestionOptionIn] | None = None
 
 
 @router.get("/")
@@ -106,12 +105,20 @@ async def get_job_type(type_id: str, current_user: CurrentUser = Depends(get_cur
 
 
 @router.post("/")
-async def create_job_type(data: JobTypeCreate, current_user: CurrentUser = Depends(get_current_admin)):
+async def create_job_type(
+    data: JobTypeCreate, current_user: CurrentUser = Depends(get_current_admin)
+):
     """Create a new job type."""
     supabase = get_supabase_client()
 
     # Get next sort_order
-    existing = supabase.table("job_types").select("sort_order").order("sort_order", desc=True).limit(1).execute()
+    existing = (
+        supabase.table("job_types")
+        .select("sort_order")
+        .order("sort_order", desc=True)
+        .limit(1)
+        .execute()
+    )
     next_order = (existing.data[0]["sort_order"] + 1) if existing.data else 0
 
     result = (
@@ -125,7 +132,9 @@ async def create_job_type(data: JobTypeCreate, current_user: CurrentUser = Depen
 
 
 @router.patch("/{type_id}")
-async def update_job_type(type_id: str, data: JobTypeUpdate, current_user: CurrentUser = Depends(get_current_admin)):
+async def update_job_type(
+    type_id: str, data: JobTypeUpdate, current_user: CurrentUser = Depends(get_current_admin)
+):
     """Update a job type name/description."""
     supabase = get_supabase_client()
     update = {}
@@ -154,19 +163,24 @@ async def archive_job_type(type_id: str, current_user: CurrentUser = Depends(get
 
 # --- KPI endpoints ---
 
+
 @router.post("/{type_id}/kpis")
-async def add_kpi(type_id: str, data: KpiCreate, current_user: CurrentUser = Depends(get_current_admin)):
+async def add_kpi(
+    type_id: str, data: KpiCreate, current_user: CurrentUser = Depends(get_current_admin)
+):
     supabase = get_supabase_client()
     result = (
         supabase.table("job_type_kpis")
-        .insert({
-            "job_type_id": type_id,
-            "name": data.name,
-            "label": data.label,
-            "kpi_type": data.kpi_type,
-            "aggregation": data.aggregation,
-            "sort_order": data.sort_order,
-        })
+        .insert(
+            {
+                "job_type_id": type_id,
+                "name": data.name,
+                "label": data.label,
+                "kpi_type": data.kpi_type,
+                "aggregation": data.aggregation,
+                "sort_order": data.sort_order,
+            }
+        )
         .execute()
     )
     if not result.data:
@@ -175,7 +189,12 @@ async def add_kpi(type_id: str, data: KpiCreate, current_user: CurrentUser = Dep
 
 
 @router.patch("/{type_id}/kpis/{kpi_id}")
-async def update_kpi(type_id: str, kpi_id: str, data: KpiUpdate, current_user: CurrentUser = Depends(get_current_admin)):
+async def update_kpi(
+    type_id: str,
+    kpi_id: str,
+    data: KpiUpdate,
+    current_user: CurrentUser = Depends(get_current_admin),
+):
     supabase = get_supabase_client()
     update = {}
     for field in ["name", "label", "aggregation", "sort_order"]:
@@ -184,14 +203,22 @@ async def update_kpi(type_id: str, kpi_id: str, data: KpiUpdate, current_user: C
             update[field] = val
     if not update:
         raise HTTPException(status_code=400, detail="No fields to update")
-    result = supabase.table("job_type_kpis").update(update).eq("id", kpi_id).eq("job_type_id", type_id).execute()
+    result = (
+        supabase.table("job_type_kpis")
+        .update(update)
+        .eq("id", kpi_id)
+        .eq("job_type_id", type_id)
+        .execute()
+    )
     if not result.data:
         raise HTTPException(status_code=404, detail="KPI not found")
     return result.data[0]
 
 
 @router.delete("/{type_id}/kpis/{kpi_id}")
-async def delete_kpi(type_id: str, kpi_id: str, current_user: CurrentUser = Depends(get_current_admin)):
+async def delete_kpi(
+    type_id: str, kpi_id: str, current_user: CurrentUser = Depends(get_current_admin)
+):
     supabase = get_supabase_client()
     supabase.table("job_type_kpis").delete().eq("id", kpi_id).eq("job_type_id", type_id).execute()
     return {"message": "KPI deleted"}
@@ -199,18 +226,23 @@ async def delete_kpi(type_id: str, kpi_id: str, current_user: CurrentUser = Depe
 
 # --- Question endpoints ---
 
+
 @router.post("/{type_id}/questions")
-async def add_question(type_id: str, data: QuestionCreate, current_user: CurrentUser = Depends(get_current_admin)):
+async def add_question(
+    type_id: str, data: QuestionCreate, current_user: CurrentUser = Depends(get_current_admin)
+):
     supabase = get_supabase_client()
     result = (
         supabase.table("job_type_questions")
-        .insert({
-            "job_type_id": type_id,
-            "question_text": data.question_text,
-            "question_type": data.question_type,
-            "is_required": data.is_required,
-            "sort_order": data.sort_order,
-        })
+        .insert(
+            {
+                "job_type_id": type_id,
+                "question_text": data.question_text,
+                "question_type": data.question_type,
+                "is_required": data.is_required,
+                "sort_order": data.sort_order,
+            }
+        )
         .execute()
     )
     if not result.data:
@@ -221,11 +253,13 @@ async def add_question(type_id: str, data: QuestionCreate, current_user: Current
     # Insert options for multiple choice
     if data.question_type == "multiple_choice" and data.options:
         for opt in data.options:
-            supabase.table("job_type_question_options").insert({
-                "question_id": question["id"],
-                "label": opt.label,
-                "sort_order": opt.sort_order,
-            }).execute()
+            supabase.table("job_type_question_options").insert(
+                {
+                    "question_id": question["id"],
+                    "label": opt.label,
+                    "sort_order": opt.sort_order,
+                }
+            ).execute()
 
     # Re-fetch with options
     full = (
@@ -239,7 +273,12 @@ async def add_question(type_id: str, data: QuestionCreate, current_user: Current
 
 
 @router.patch("/{type_id}/questions/{q_id}")
-async def update_question(type_id: str, q_id: str, data: QuestionUpdate, current_user: CurrentUser = Depends(get_current_admin)):
+async def update_question(
+    type_id: str,
+    q_id: str,
+    data: QuestionUpdate,
+    current_user: CurrentUser = Depends(get_current_admin),
+):
     supabase = get_supabase_client()
     update = {}
     for field in ["question_text", "question_type", "is_required", "sort_order"]:
@@ -247,17 +286,21 @@ async def update_question(type_id: str, q_id: str, data: QuestionUpdate, current
         if val is not None:
             update[field] = val
     if update:
-        supabase.table("job_type_questions").update(update).eq("id", q_id).eq("job_type_id", type_id).execute()
+        supabase.table("job_type_questions").update(update).eq("id", q_id).eq(
+            "job_type_id", type_id
+        ).execute()
 
     # Replace options if provided
     if data.options is not None:
         supabase.table("job_type_question_options").delete().eq("question_id", q_id).execute()
         for opt in data.options:
-            supabase.table("job_type_question_options").insert({
-                "question_id": q_id,
-                "label": opt.label,
-                "sort_order": opt.sort_order,
-            }).execute()
+            supabase.table("job_type_question_options").insert(
+                {
+                    "question_id": q_id,
+                    "label": opt.label,
+                    "sort_order": opt.sort_order,
+                }
+            ).execute()
 
     # Re-fetch
     full = (
@@ -271,7 +314,11 @@ async def update_question(type_id: str, q_id: str, data: QuestionUpdate, current
 
 
 @router.delete("/{type_id}/questions/{q_id}")
-async def delete_question(type_id: str, q_id: str, current_user: CurrentUser = Depends(get_current_admin)):
+async def delete_question(
+    type_id: str, q_id: str, current_user: CurrentUser = Depends(get_current_admin)
+):
     supabase = get_supabase_client()
-    supabase.table("job_type_questions").delete().eq("id", q_id).eq("job_type_id", type_id).execute()
+    supabase.table("job_type_questions").delete().eq("id", q_id).eq(
+        "job_type_id", type_id
+    ).execute()
     return {"message": "Question deleted"}
