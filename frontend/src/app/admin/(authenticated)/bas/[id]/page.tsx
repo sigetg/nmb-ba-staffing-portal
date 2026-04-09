@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge, Alert, Avatar, Textarea } from '@/components/ui'
-import { ChevronLeft, Check, X, FileText, Save } from 'lucide-react'
+import { ChevronLeft, Check, X, FileText, Save, Eye } from 'lucide-react'
+import { startImpersonation } from '@/lib/actions/impersonation'
 import type { BAProfile, BAPhoto, Job, JobApplication } from '@/types'
 import { formatJobStatus, getJobDisplayStatus, getJobStatusBadgeVariant, parseLocalDate } from '@/lib/utils'
 
@@ -240,11 +241,24 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
                 <Badge variant={statusBadge.variant}>{statusBadge.text}</Badge>
               </div>
             </div>
-            <div className="text-center sm:text-right">
-              <p className="text-sm text-primary-400">Applied</p>
-              <p className="font-medium text-gray-900">
-                {new Date(profile.created_at).toLocaleDateString()}
-              </p>
+            <div className="flex flex-col items-center sm:items-end gap-2">
+              <div className="text-center sm:text-right">
+                <p className="text-sm text-primary-400">Applied</p>
+                <p className="font-medium text-gray-900">
+                  {new Date(profile.created_at).toLocaleDateString()}
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  await startImpersonation(id)
+                  router.push('/dashboard')
+                }}
+              >
+                <Eye className="w-4 h-4 mr-1" />
+                Login As
+              </Button>
             </div>
           </div>
         </CardContent>
@@ -479,7 +493,9 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
                 </thead>
                 <tbody>
                   {assignedJobs.map((aj) => {
-                    const jobDisplayStatus = getJobDisplayStatus(aj.jobs)
+                    const jobDisplayStatus = aj.jobs.date && aj.jobs.start_time && aj.jobs.end_time
+                      ? getJobDisplayStatus({ status: aj.jobs.status, date: aj.jobs.date, start_time: aj.jobs.start_time, end_time: aj.jobs.end_time, timezone: aj.jobs.timezone })
+                      : aj.jobs.status === 'draft' ? 'draft' : aj.jobs.status === 'cancelled' ? 'cancelled' : 'in_progress'
                     return (
                     <tr key={aj.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="py-3 px-4 text-sm">
@@ -492,7 +508,7 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
                       </td>
                       <td className="py-3 px-4 text-sm text-gray-900">{aj.jobs.brand}</td>
                       <td className="py-3 px-4 text-sm text-gray-900">
-                        {parseLocalDate(aj.jobs.date).toLocaleDateString()}
+                        {aj.jobs.date ? parseLocalDate(aj.jobs.date).toLocaleDateString() : 'Multi-day'}
                       </td>
                       <td className="py-3 px-4 text-sm text-gray-900">${aj.jobs.pay_rate}/hr</td>
                       <td className="py-3 px-4">
