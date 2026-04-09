@@ -24,13 +24,15 @@ export async function uploadJobPhoto(
   file: File,
   jobId: string,
   photoType: string,
-  jobDayLocationId?: string
+  jobDayLocationId?: string,
+  baId?: string
 ): Promise<{ id: string; url: string }> {
   const form = new FormData()
   form.append('file', file)
   form.append('job_id', jobId)
   form.append('photo_type', photoType)
   if (jobDayLocationId) form.append('job_day_location_id', jobDayLocationId)
+  if (baId) form.append('ba_id', baId)
 
   const res = await apiRequest('/api/files/upload/job-photo', accessToken, {
     method: 'POST',

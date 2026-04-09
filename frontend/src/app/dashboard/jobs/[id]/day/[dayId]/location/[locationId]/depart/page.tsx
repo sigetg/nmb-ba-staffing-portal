@@ -93,7 +93,7 @@ export default function DepartLocationPage({ params }: { params: Promise<{ id: s
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) { setError('Not authenticated'); return }
 
-      const { url } = await uploadJobPhoto(session.access_token, file, jobId, 'check_out', locationId)
+      const { url } = await uploadJobPhoto(session.access_token, file, jobId, 'check_out', locationId, profileId!)
       setDepartPhoto(url)
     } catch {
       setError('Failed to upload')

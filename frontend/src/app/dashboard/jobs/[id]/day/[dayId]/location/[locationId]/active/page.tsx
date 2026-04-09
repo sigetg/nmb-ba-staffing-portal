@@ -118,7 +118,7 @@ export default function LocationActivePage({ params }: { params: Promise<{ id: s
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) { setError('Not authenticated'); return }
 
-      const result = await uploadJobPhoto(session.access_token, file, jobId, selectedCategory, locationId)
+      const result = await uploadJobPhoto(session.access_token, file, jobId, selectedCategory, locationId, profileId!)
       const newPhoto = { id: result.id, url: result.url, photo_type: selectedCategory, job_id: jobId, ba_id: profileId!, job_day_location_id: locationId, created_at: new Date().toISOString() } as JobPhoto
       setPhotos(prev => [...prev, newPhoto])
     } catch {

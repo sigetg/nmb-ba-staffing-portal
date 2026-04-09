@@ -5,11 +5,11 @@ import { createClient } from '@/lib/supabase/client'
 import { useWizard } from './wizard-context'
 import { Input, Textarea } from '@/components/ui'
 import { FileText } from 'lucide-react'
-import type { JobType } from '@/types'
+
 
 export function StepBasicInfo() {
   const { state, setField } = useWizard()
-  const [jobTypes, setJobTypes] = useState<JobType[]>([])
+  const [jobTypes, setJobTypes] = useState<{ id: string; name: string }[]>([])
 
   useEffect(() => {
     const supabase = createClient()
