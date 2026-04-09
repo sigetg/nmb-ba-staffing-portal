@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -11,6 +12,39 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 PORTAL_ROOT = "/NMB-Portal"
+
+
+def _sanitize_for_path(name: str) -> str:
+    """Convert a name to a filesystem-safe string for Dropbox folder names."""
+    name = name.strip()
+    if not name:
+        return "unknown"
+    # Replace spaces and non-alphanumeric chars (except hyphens/underscores) with underscore
+    name = re.sub(r"[^\w\-]", "_", name)
+    # Collapse multiple underscores
+    name = re.sub(r"_+", "_", name)
+    # Strip leading/trailing underscores
+    name = name.strip("_")
+    return name[:50] if name else "unknown"
+
+
+def _get_ba_name(current_user: CurrentUser) -> str:
+    """Get a human-readable BA name for folder paths."""
+    if current_user.profile and current_user.profile.get("name"):
+        return _sanitize_for_path(current_user.profile["name"])
+    # Fallback to email prefix
+    if current_user.email:
+        return _sanitize_for_path(current_user.email.split("@")[0])
+    return "unknown"
+
+
+def _get_job_title(job_id: str) -> str:
+    """Look up a job's title for folder paths."""
+    supabase = get_supabase_client()
+    result = supabase.table("jobs").select("title").eq("id", job_id).maybe_single().execute()
+    if result.data and result.data.get("title"):
+        return _sanitize_for_path(result.data["title"])
+    return "untitled"
 
 
 # --- Job Photos (BA) ---
@@ -40,8 +74,10 @@ async def upload_job_photo(
 
     ext = (file.filename or "photo.jpg").rsplit(".", 1)[-1]
     timestamp = int(time.time() * 1000)
+    ba_name = _get_ba_name(current_user)
+    job_title = _get_job_title(job_id)
     dropbox_path = (
-        f"{PORTAL_ROOT}/job-photos/{current_user.id}/{job_id}/{photo_type}-{timestamp}.{ext}"
+        f"{PORTAL_ROOT}/job-photos/{ba_name}_{current_user.id}/{job_title}_{job_id}/{photo_type}-{timestamp}.{ext}"
     )
 
     url = dropbox_storage.upload_file(file_bytes, dropbox_path)
@@ -116,7 +152,8 @@ async def upload_ba_photo(
     dropbox_storage.validate_image(file_bytes, file.content_type or "", file.filename or "")
 
     ext = (file.filename or "photo.jpg").rsplit(".", 1)[-1]
-    dropbox_path = f"{PORTAL_ROOT}/ba-photos/{current_user.id}/{photo_type}.{ext}"
+    ba_name = _get_ba_name(current_user)
+    dropbox_path = f"{PORTAL_ROOT}/ba-photos/{ba_name}_{current_user.id}/{photo_type}.{ext}"
 
     url = dropbox_storage.upload_file(file_bytes, dropbox_path)
 
@@ -135,7 +172,8 @@ async def upload_ba_resume(
     file_bytes = await file.read()
     dropbox_storage.validate_pdf(file_bytes, file.content_type or "", file.filename or "")
 
-    dropbox_path = f"{PORTAL_ROOT}/ba-resumes/{current_user.id}/resume.pdf"
+    ba_name = _get_ba_name(current_user)
+    dropbox_path = f"{PORTAL_ROOT}/ba-resumes/{ba_name}_{current_user.id}/resume.pdf"
 
     url = dropbox_storage.upload_file(file_bytes, dropbox_path)
 
@@ -155,7 +193,8 @@ async def upload_job_worksheet(
     file_bytes = await file.read()
     dropbox_storage.validate_pdf(file_bytes, file.content_type or "", file.filename or "")
 
-    dropbox_path = f"{PORTAL_ROOT}/job-worksheets/{job_id}/worksheet.pdf"
+    job_title = _get_job_title(job_id)
+    dropbox_path = f"{PORTAL_ROOT}/job-worksheets/{job_title}_{job_id}/worksheet.pdf"
 
     url = dropbox_storage.upload_file(file_bytes, dropbox_path)
 
@@ -175,12 +214,18 @@ async def delete_job_worksheet(
     supabase = get_supabase_client()
 
     # Get current worksheet URL to confirm it exists
-    job = supabase.table("jobs").select("worksheet_url").eq("id", job_id).single().execute()
+    job = supabase.table("jobs").select("worksheet_url, title").eq("id", job_id).single().execute()
     if not job.data:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    dropbox_path = f"{PORTAL_ROOT}/job-worksheets/{job_id}/worksheet.pdf"
-    dropbox_storage.delete_file(dropbox_path)
+    # Try new-format path first, fall back to old-format for pre-existing worksheets
+    job_title = _sanitize_for_path(job.data.get("title") or "")
+    new_path = f"{PORTAL_ROOT}/job-worksheets/{job_title}_{job_id}/worksheet.pdf"
+    old_path = f"{PORTAL_ROOT}/job-worksheets/{job_id}/worksheet.pdf"
+    try:
+        dropbox_storage.delete_file(new_path)
+    except Exception:
+        dropbox_storage.delete_file(old_path)
 
     supabase.table("jobs").update({"worksheet_url": None}).eq("id", job_id).execute()
 
