@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Card, CardContent, Badge } from '@/components/ui'
@@ -22,14 +23,13 @@ function getDayProgress(job: JobWithDays): { current: number; total: number } | 
   return { current: currentIdx + 1, total: days.length }
 }
 
-async function getMyJobs(userId: string) {
+async function getMyJobs(userId: string, impersonatedBAId?: string) {
   const supabase = await createClient()
 
-  const { data: profile } = await supabase
-    .from('ba_profiles')
-    .select('id')
-    .eq('user_id', userId)
-    .single()
+  const profileQuery = impersonatedBAId
+    ? supabase.from('ba_profiles').select('id').eq('id', impersonatedBAId).single()
+    : supabase.from('ba_profiles').select('id').eq('user_id', userId).single()
+  const { data: profile } = await profileQuery
 
   if (!profile) {
     return { applications: [] as Application[], activeJobId: null as string | null, activeCheckInTime: null as string | null, isMultiDayActive: false }
@@ -92,7 +92,10 @@ export default async function MyJobsPage() {
     return null
   }
 
-  const { applications, activeJobId, activeCheckInTime, isMultiDayActive } = await getMyJobs(user.id)
+  const cookieStore = await cookies()
+  const impersonatedBAId = cookieStore.get('impersonate_ba_id')?.value
+
+  const { applications, activeJobId, activeCheckInTime, isMultiDayActive } = await getMyJobs(user.id, impersonatedBAId)
 
   const activeJobApp = activeJobId
     ? applications.find(app => app.jobs.id === activeJobId)

@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_phone_number: str = ""
 
+    # Dropbox
+    dropbox_app_key: str = ""
+    dropbox_app_secret: str = ""
+    dropbox_refresh_token: str = ""
+
     model_config = {"env_file": ".env", "case_sensitive": False}
 
 

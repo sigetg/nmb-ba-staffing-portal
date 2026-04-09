@@ -7,7 +7,9 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Alert } from '@/components/ui'
 import { ChevronLeft, MapPin, Clock, Camera, Loader2, LogOut, CheckCircle2, ChevronDown, ChevronUp, X } from 'lucide-react'
+import { uploadJobPhoto, deleteJobPhoto } from '@/lib/api'
 import type { Job, CheckIn, JobPhoto } from '@/types'
+import { getImpersonatedBAId } from '@/lib/impersonation'
 
 const PHOTO_CATEGORIES = [
   { type: 'setup', label: 'Setup', min: 3 },
@@ -88,11 +90,10 @@ export default function ActiveJobPage({ params }: { params: Promise<{ id: string
       }
       setUserId(user.id)
 
-      const { data: profile } = await supabase
-        .from('ba_profiles')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
+      const impersonatedId = getImpersonatedBAId()
+      const { data: profile } = await (impersonatedId
+        ? supabase.from('ba_profiles').select('id').eq('id', impersonatedId).single()
+        : supabase.from('ba_profiles').select('id').eq('user_id', user.id).single())
 
       if (!profile) {
         setError('Profile not found')
@@ -225,44 +226,15 @@ export default function ActiveJobPage({ params }: { params: Promise<{ id: string
     setError(null)
 
     try {
-      const ext = file.name.split('.').pop()
-      const filePath = `${userId}/${id}/${photoType}-${Date.now()}.${ext}`
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) { setError('Not authenticated'); return }
 
-      const { error: uploadError } = await supabase.storage
-        .from('job-photos')
-        .upload(filePath, file)
-
-      if (uploadError) {
-        setError(uploadError.message)
-        return
-      }
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('job-photos')
-        .getPublicUrl(filePath)
-
-      const { data: newPhoto, error: insertError } = await supabase
-        .from('job_photos')
-        .insert({
-          job_id: id,
-          ba_id: profileId,
-          url: publicUrl,
-          photo_type: photoType,
-        })
-        .select()
-        .single()
-
-      if (insertError) {
-        setError(insertError.message)
-        return
-      }
-
-      if (newPhoto) {
-        setPhotosByCategory(prev => ({
-          ...prev,
-          [photoType]: [...prev[photoType], newPhoto],
-        }))
-      }
+      const result = await uploadJobPhoto(session.access_token, file, id, photoType)
+      const newPhoto = { id: result.id, url: result.url, photo_type: photoType, job_id: id, ba_id: profileId!, created_at: new Date().toISOString() } as JobPhoto
+      setPhotosByCategory(prev => ({
+        ...prev,
+        [photoType]: [...prev[photoType], newPhoto],
+      }))
     } catch {
       setError('Failed to upload photo')
     } finally {
@@ -274,11 +246,10 @@ export default function ActiveJobPage({ params }: { params: Promise<{ id: string
     if (!confirm('Remove this photo?')) return
     setIsDeletingPhoto(photo.id)
     try {
-      const pathMatch = photo.url.match(/\/object\/public\/job-photos\/(.+)$/)
-      if (pathMatch) {
-        await supabase.storage.from('job-photos').remove([pathMatch[1]])
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        await deleteJobPhoto(session.access_token, photo.id)
       }
-      await supabase.from('job_photos').delete().eq('id', photo.id)
       setPhotosByCategory(prev => ({
         ...prev,
         [photoType]: prev[photoType].filter(p => p.id !== photo.id),

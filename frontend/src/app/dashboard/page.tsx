@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle, Badge } from '@/components/ui'
 import { Calendar, Clock, CheckCircle2, Briefcase, ChevronRight } from 'lucide-react'
 import { getMultiDayDisplayStatus, getJobDateDisplay, getJobLocationDisplay } from '@/lib/utils'
-import { getBAUserWithProfile } from '@/lib/supabase/auth-helpers'
+import { getEffectiveBAProfile } from '@/lib/supabase/auth-helpers'
 import type { JobWithDays } from '@/types'
 
 type AppWithJob = {
@@ -106,7 +106,7 @@ async function getDashboardData(profileId: string) {
 }
 
 export default async function DashboardPage() {
-  const result = await getBAUserWithProfile()
+  const result = await getEffectiveBAProfile()
 
   if (!result?.profile) {
     return null

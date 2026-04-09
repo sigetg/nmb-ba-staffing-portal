@@ -8,7 +8,9 @@ import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Alert, Select } from '@/components/ui'
 import { ChevronLeft, MapPin, Clock, Camera, Loader2, ChevronDown, ChevronUp, CheckCircle2, X } from 'lucide-react'
 import { DayLocationTimeline } from '@/components/worker/day-location-timeline'
+import { uploadJobPhoto, deleteJobPhoto } from '@/lib/api'
 import type { JobDayLocation, LocationCheckIn, JobPhoto } from '@/types'
+import { getImpersonatedBAId } from '@/lib/impersonation'
 
 const PHOTO_CATEGORIES = [
   { value: 'setup', label: 'Setup', min: 3 },
@@ -66,7 +68,10 @@ export default function LocationActivePage({ params }: { params: Promise<{ id: s
       if (!user) { router.push('/auth/login'); return }
       setUserId(user.id)
 
-      const { data: profile } = await supabase.from('ba_profiles').select('id').eq('user_id', user.id).single()
+      const impersonatedId = getImpersonatedBAId()
+      const { data: profile } = await (impersonatedId
+        ? supabase.from('ba_profiles').select('id').eq('id', impersonatedId).single()
+        : supabase.from('ba_profiles').select('id').eq('user_id', user.id).single())
       if (!profile) return
       setProfileId(profile.id)
 
@@ -110,19 +115,12 @@ export default function LocationActivePage({ params }: { params: Promise<{ id: s
     if (!file || !userId || !profileId) return
     setIsUploadingPhoto(true)
     try {
-      const ext = file.name.split('.').pop()
-      const filePath = `${userId}/${jobId}/${selectedCategory}-${locationId}-${Date.now()}.${ext}`
-      const { error: uploadError } = await supabase.storage.from('job-photos').upload(filePath, file)
-      if (uploadError) { setError(uploadError.message); return }
-      const { data: { publicUrl } } = supabase.storage.from('job-photos').getPublicUrl(filePath)
-      const { data: inserted } = await supabase.from('job_photos').insert({
-        job_id: jobId,
-        ba_id: profileId,
-        url: publicUrl,
-        photo_type: selectedCategory,
-        job_day_location_id: locationId,
-      }).select().single()
-      if (inserted) setPhotos(prev => [...prev, inserted as JobPhoto])
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) { setError('Not authenticated'); return }
+
+      const result = await uploadJobPhoto(session.access_token, file, jobId, selectedCategory, locationId)
+      const newPhoto = { id: result.id, url: result.url, photo_type: selectedCategory, job_id: jobId, ba_id: profileId!, job_day_location_id: locationId, created_at: new Date().toISOString() } as JobPhoto
+      setPhotos(prev => [...prev, newPhoto])
     } catch {
       setError('Failed to upload photo')
     } finally {
@@ -134,11 +132,10 @@ export default function LocationActivePage({ params }: { params: Promise<{ id: s
     if (!confirm('Remove this photo?')) return
     setIsDeletingPhoto(photo.id)
     try {
-      const pathMatch = photo.url.match(/\/object\/public\/job-photos\/(.+)$/)
-      if (pathMatch) {
-        await supabase.storage.from('job-photos').remove([pathMatch[1]])
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        await deleteJobPhoto(session.access_token, photo.id)
       }
-      await supabase.from('job_photos').delete().eq('id', photo.id)
       setPhotos(prev => prev.filter(p => p.id !== photo.id))
     } catch {
       setError('Failed to remove photo')

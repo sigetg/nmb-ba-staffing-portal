@@ -1,14 +1,15 @@
-import type { DisplayJobStatus } from '@/types'
+import type { DisplayJobStatus, JobWithDays } from '@/types'
 
 export function formatJobStatus(status: string): string {
   const labels: Record<string, string> = {
-    draft: 'DRAFT',
-    upcoming: 'UPCOMING',
-    in_progress: 'IN PROGRESS',
-    completed: 'COMPLETED',
-    cancelled: 'CANCELLED',
+    draft: 'Draft',
+    upcoming: 'Upcoming',
+    in_progress: 'In Progress',
+    completed: 'Completed',
+    cancelled: 'Cancelled',
+    archived: 'Archived',
   }
-  return labels[status] || status.toUpperCase().replace(/_/g, ' ')
+  return labels[status] || status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
 export function getJobStatusBadgeVariant(status: string): 'default' | 'info' | 'success' | 'warning' | 'error' {
@@ -18,6 +19,7 @@ export function getJobStatusBadgeVariant(status: string): 'default' | 'info' | '
     in_progress: 'success',
     completed: 'default',
     cancelled: 'error',
+    archived: 'default',
   }
   return variants[status] || 'default'
 }
@@ -64,6 +66,7 @@ export function getJobDisplayStatus(job: {
 }): DisplayJobStatus {
   if (job.status === 'draft') return 'draft'
   if (job.status === 'cancelled') return 'cancelled'
+  if (job.status === 'archived') return 'archived'
 
   // job.status === 'published' — compute from time
   const { date: nowDate, time: nowTime } = getNowInTimezone(job.timezone)
@@ -77,10 +80,92 @@ export function getJobDisplayStatus(job: {
   return 'in_progress'
 }
 
+/** Compute display status for a multi-day job based on job_days date range */
+export function getMultiDayDisplayStatus(job: JobWithDays): DisplayJobStatus {
+  if (job.status === 'draft') return 'draft'
+  if (job.status === 'cancelled') return 'cancelled'
+  if (job.status === 'archived') return 'archived'
+
+  const days = (job.job_days || []).sort((a, b) => a.date.localeCompare(b.date))
+  if (days.length === 0) {
+    // Fallback for jobs with no days at all
+    if (job.date && job.start_time && job.end_time && job.timezone) {
+      return getJobDisplayStatus({ status: job.status, date: job.date, start_time: job.start_time, end_time: job.end_time, timezone: job.timezone })
+    }
+    return 'upcoming'
+  }
+
+  const today = getLocalToday()
+  const firstDate = days[0].date
+  const lastDate = days[days.length - 1].date
+
+  if (today > lastDate) return 'completed'
+  if (today < firstDate) return 'upcoming'
+  return 'in_progress'
+}
+
+/** Get formatted date display for a job (single date or range) */
+export function getJobDateDisplay(job: JobWithDays): string {
+  const days = (job.job_days || []).sort((a, b) => a.date.localeCompare(b.date))
+  if (days.length === 0) {
+    return job.date ? parseLocalDate(job.date).toLocaleDateString() : 'No date'
+  }
+  if (days.length === 1) {
+    return parseLocalDate(days[0].date).toLocaleDateString()
+  }
+  return `${parseLocalDate(days[0].date).toLocaleDateString()} - ${parseLocalDate(days[days.length - 1].date).toLocaleDateString()}`
+}
+
+/** Get location display for a job (single or "Location +N more") */
+export function getJobLocationDisplay(job: JobWithDays): string {
+  const days = job.job_days || []
+  if (days.length === 0) return job.location || ''
+
+  const locations = new Set<string>()
+  for (const day of days) {
+    for (const loc of (day.job_day_locations || [])) {
+      locations.add(loc.location)
+    }
+  }
+  if (locations.size === 0) return job.location || ''
+  if (locations.size === 1) return [...locations][0]
+  return `${[...locations][0]} +${locations.size - 1} more`
+}
+
 /** Get short timezone abbreviation (e.g., "CST", "EST") */
 export function getTimezoneAbbr(timezone: string): string {
   return new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     timeZoneName: 'short',
   }).formatToParts(new Date()).find(p => p.type === 'timeZoneName')?.value || ''
+}
+
+/** Haversine distance between two lat/lng points in miles */
+export function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 3958.8 // Earth radius in miles
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+/** Get minimum distance from a user's location to any of a job's locations (miles), or null */
+export function getMinJobDistance(
+  job: JobWithDays,
+  userLat: number,
+  userLng: number
+): number | null {
+  let min: number | null = null
+  for (const day of job.job_days || []) {
+    for (const loc of day.job_day_locations || []) {
+      if (loc.latitude != null && loc.longitude != null) {
+        const d = haversineDistance(userLat, userLng, loc.latitude, loc.longitude)
+        if (min === null || d < min) min = d
+      }
+    }
+  }
+  return min
 }

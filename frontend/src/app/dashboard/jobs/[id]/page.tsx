@@ -7,11 +7,13 @@ import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge, Alert } from '@/components/ui'
 import { ChevronLeft, Calendar, Clock, MapPin, FileText, CheckCircle2 } from 'lucide-react'
 import { parseLocalDate, getTimezoneAbbr } from '@/lib/utils'
-import type { Job, BAProfile, JobApplication } from '@/types'
+import type { Job, BAProfile, JobApplication, JobDay, JobDayLocation } from '@/types'
+import { getImpersonatedBAId } from '@/lib/impersonation'
 
 export default function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const [job, setJob] = useState<Job | null>(null)
+  const [jobDays, setJobDays] = useState<(JobDay & { job_day_locations: JobDayLocation[] })[]>([])
   const [profile, setProfile] = useState<BAProfile | null>(null)
   const [application, setApplication] = useState<JobApplication | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -34,10 +36,10 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
         return
       }
 
-      // Load job
+      // Load job with days/locations
       const { data: jobData, error: jobError } = await supabase
         .from('jobs')
-        .select('*')
+        .select('*, job_days(*, job_day_locations(*))')
         .eq('id', id)
         .single()
 
@@ -45,14 +47,22 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
         setError('Job not found')
         return
       }
-      setJob(jobData)
+      const { job_days: days, ...jobOnly } = jobData
+      setJob(jobOnly)
+      const sortedDays = (days || [])
+        .sort((a: JobDay, b: JobDay) => a.date.localeCompare(b.date))
+        .map((d: JobDay & { job_day_locations: JobDayLocation[] }) => ({
+          ...d,
+          job_day_locations: (d.job_day_locations || []).sort((a: JobDayLocation, b: JobDayLocation) => a.sort_order - b.sort_order),
+        }))
+      setJobDays(sortedDays)
 
-      // Load profile
-      const { data: profileData } = await supabase
-        .from('ba_profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .single()
+      // Load profile (check impersonation first)
+      const impersonatedId = getImpersonatedBAId()
+      const profileQuery = impersonatedId
+        ? supabase.from('ba_profiles').select('*').eq('id', impersonatedId).single()
+        : supabase.from('ba_profiles').select('*').eq('user_id', user.id).single()
+      const { data: profileData } = await profileQuery
 
       setProfile(profileData)
 
@@ -179,54 +189,95 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
         </CardContent>
       </Card>
 
-      {/* Job Details */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Details</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary-100 rounded-lg">
-                <Calendar className="w-5 h-5 text-primary-400" />
-              </div>
-              <div>
-                <p className="text-sm text-primary-400">Date</p>
-                <p className="font-medium text-gray-900">
-                  {parseLocalDate(job.date).toLocaleDateString('en-US', {
+      {/* Job Details — multi-day or legacy */}
+      {jobDays.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Schedule ({jobDays.length} {jobDays.length === 1 ? 'day' : 'days'})</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {jobDays.map((day, dayIdx) => (
+              <div key={day.id} className="border border-gray-200 rounded-lg p-4">
+                <h4 className="font-medium text-gray-900 mb-2">
+                  Day {dayIdx + 1} — {parseLocalDate(day.date).toLocaleDateString('en-US', {
                     weekday: 'long',
-                    year: 'numeric',
                     month: 'long',
                     day: 'numeric',
                   })}
-                </p>
+                </h4>
+                <div className="space-y-2">
+                  {day.job_day_locations.map((loc, locIdx) => (
+                    <div key={loc.id} className="flex items-center gap-3 text-sm text-gray-600 ml-2">
+                      <span className="w-5 h-5 rounded-full bg-primary-100 text-primary-600 flex items-center justify-center text-xs font-medium">
+                        {locIdx + 1}
+                      </span>
+                      <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                      <span>{loc.location}</span>
+                      <span className="text-gray-400">|</span>
+                      <Clock className="w-3.5 h-3.5 text-gray-400" />
+                      <span>{loc.start_time} - {loc.end_time}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Details</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {job.date && (
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-primary-100 rounded-lg">
+                    <Calendar className="w-5 h-5 text-primary-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-primary-400">Date</p>
+                    <p className="font-medium text-gray-900">
+                      {parseLocalDate(job.date).toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })}
+                    </p>
+                  </div>
+                </div>
+              )}
 
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary-100 rounded-lg">
-                <Clock className="w-5 h-5 text-primary-400" />
-              </div>
-              <div>
-                <p className="text-sm text-primary-400">Time</p>
-                <p className="font-medium text-gray-900">
-                  {job.start_time} - {job.end_time} {job.timezone ? getTimezoneAbbr(job.timezone) : ''}
-                </p>
-              </div>
-            </div>
+              {job.start_time && job.end_time && (
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-primary-100 rounded-lg">
+                    <Clock className="w-5 h-5 text-primary-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-primary-400">Time</p>
+                    <p className="font-medium text-gray-900">
+                      {job.start_time} - {job.end_time} {job.timezone ? getTimezoneAbbr(job.timezone) : ''}
+                    </p>
+                  </div>
+                </div>
+              )}
 
-            <div className="flex items-center gap-3 sm:col-span-2">
-              <div className="p-2 bg-primary-100 rounded-lg">
-                <MapPin className="w-5 h-5 text-primary-400" />
-              </div>
-              <div>
-                <p className="text-sm text-primary-400">Location</p>
-                <p className="font-medium text-gray-900">{job.location}</p>
-              </div>
+              {job.location && (
+                <div className="flex items-center gap-3 sm:col-span-2">
+                  <div className="p-2 bg-primary-100 rounded-lg">
+                    <MapPin className="w-5 h-5 text-primary-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-primary-400">Location</p>
+                    <p className="font-medium text-gray-900">{job.location}</p>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Description */}
       {job.description && (

@@ -23,6 +23,7 @@ timezonefinder==6.5.0
 stripe==8.4.0
 resend==0.7.2
 twilio==8.13.0
+dropbox>=12.0.0,<13.0
 # httpx pulled in by supabase
 
 # Development

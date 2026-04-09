@@ -33,10 +33,10 @@ async function getAdminDashboardData() {
     .order('created_at', { ascending: false })
     .limit(5)
 
-  // Get published jobs with days/locations
+  // Get published jobs with days/locations and type info
   const { data: activeJobsList } = await supabase
     .from('jobs')
-    .select('*, job_days(*, job_day_locations(*))')
+    .select('*, job_types(name), job_days(*, job_day_locations(*))')
     .eq('status', 'published')
     .order('created_at', { ascending: false })
     .limit(20)
@@ -49,6 +49,25 @@ async function getAdminDashboardData() {
     .order('applied_at', { ascending: false })
     .limit(5)
 
+  // Split jobs into active and completed
+  const allJobs = (activeJobsList || []) as (JobWithDays & { job_types?: { name: string } | null })[]
+  const activeJobs2 = allJobs
+    .map(job => ({ ...job, displayStatus: getMultiDayDisplayStatus(job) }))
+    .filter(job => job.displayStatus === 'in_progress' || job.displayStatus === 'upcoming')
+    .sort((a, b) => {
+      if (a.displayStatus === 'in_progress' && b.displayStatus !== 'in_progress') return -1
+      if (b.displayStatus === 'in_progress' && a.displayStatus !== 'in_progress') return 1
+      const aDate = [...(a.job_days || [])].sort((x, y) => x.date.localeCompare(y.date))[0]?.date || ''
+      const bDate = [...(b.job_days || [])].sort((x, y) => x.date.localeCompare(y.date))[0]?.date || ''
+      return aDate.localeCompare(bDate)
+    })
+    .slice(0, 5)
+
+  const completedJobs = allJobs
+    .map(job => ({ ...job, displayStatus: getMultiDayDisplayStatus(job) }))
+    .filter(job => job.displayStatus === 'completed')
+    .slice(0, 5)
+
   return {
     stats: {
       totalBAs: totalBAs || 0,
@@ -59,27 +78,16 @@ async function getAdminDashboardData() {
       pendingApplications: pendingApplications || 0,
     },
     pendingBAsList: pendingBAsList || [],
-    activeJobsList: (activeJobsList || []) as JobWithDays[],
+    activeJobsList: activeJobs2,
+    completedJobsList: completedJobs,
     recentApplications: recentApplications || [],
   }
 }
 
 export default async function AdminDashboardPage() {
-  const { stats, pendingBAsList, activeJobsList, recentApplications } = await getAdminDashboardData()
+  const { stats, pendingBAsList, activeJobsList, completedJobsList, recentApplications } = await getAdminDashboardData()
 
-  // Filter to upcoming/in_progress and sort in_progress first
   const sortedActiveJobs = activeJobsList
-    .map(job => ({ ...job, displayStatus: getMultiDayDisplayStatus(job) }))
-    .filter(job => job.displayStatus === 'in_progress' || job.displayStatus === 'upcoming')
-    .sort((a, b) => {
-      if (a.displayStatus === 'in_progress' && b.displayStatus !== 'in_progress') return -1
-      if (b.displayStatus === 'in_progress' && a.displayStatus !== 'in_progress') return 1
-      // Sort by first day date
-      const aDate = [...(a.job_days || [])].sort((x, y) => x.date.localeCompare(y.date))[0]?.date || ''
-      const bDate = [...(b.job_days || [])].sort((x, y) => x.date.localeCompare(y.date))[0]?.date || ''
-      return aDate.localeCompare(bDate)
-    })
-    .slice(0, 5)
 
   return (
     <div className="space-y-6">
@@ -172,39 +180,87 @@ export default async function AdminDashboardPage() {
         </Card>
       </div>
 
+      {/* 2x2 Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pending BAs */}
+        {/* Active Jobs (top-left) */}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Pending BA Approvals</CardTitle>
-              <Link href="/admin/bas/pending" className="text-sm text-primary-400 hover:text-primary-500">
-                View all
-              </Link>
+              <CardTitle>Active Jobs</CardTitle>
+              <Link href="/admin/jobs" className="text-sm text-primary-400 hover:text-primary-500">View all</Link>
             </div>
           </CardHeader>
           <CardContent>
-            {pendingBAsList.length === 0 ? (
-              <div className="text-center py-8 text-primary-400">
-                No pending approvals
-              </div>
+            {sortedActiveJobs.length === 0 ? (
+              <div className="text-center py-8 text-primary-400">No active jobs</div>
             ) : (
               <div className="space-y-3">
-                {pendingBAsList.map((ba: { id: string; name: string; zip_code: string; created_at: string }) => (
-                  <div
-                    key={ba.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                  >
+                {sortedActiveJobs.map((job) => (
+                  <Link key={job.id} href={`/admin/jobs/${job.id}`} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                     <div>
-                      <p className="font-medium text-gray-900">{ba.name}</p>
-                      <p className="text-sm text-primary-400">
-                        ZIP: {ba.zip_code} - Applied {new Date(ba.created_at).toLocaleDateString()}
-                      </p>
+                      <p className="font-medium text-gray-900">{job.title}</p>
+                      <p className="text-sm text-primary-400">{job.brand} - {getJobDateDisplay(job)}</p>
+                      <p className="text-sm text-primary-400">{job.slots_filled}/{job.slots} slots filled</p>
                     </div>
-                    <Link
-                      href={`/admin/bas/${ba.id}`}
-                      className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100"
-                    >
+                    <Badge variant={getJobStatusBadgeVariant(job.displayStatus)}>{formatJobStatus(job.displayStatus)}</Badge>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Recently Completed Jobs (top-right) */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Recently Completed</CardTitle>
+              <Link href="/admin/jobs" className="text-sm text-primary-400 hover:text-primary-500">View all</Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {completedJobsList.length === 0 ? (
+              <div className="text-center py-8 text-primary-400">No completed jobs yet</div>
+            ) : (
+              <div className="space-y-3">
+                {completedJobsList.map((job) => (
+                  <Link key={job.id} href={`/admin/jobs/${job.id}`} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                    <div>
+                      <p className="font-medium text-gray-900">{job.title}</p>
+                      <p className="text-sm text-primary-400">
+                        {job.brand}
+                        {(job as typeof job & { job_types?: { name: string } | null }).job_types?.name && ` - ${(job as typeof job & { job_types?: { name: string } | null }).job_types!.name}`}
+                      </p>
+                      <p className="text-sm text-primary-400">{getJobDateDisplay(job)} - {job.slots_filled} BAs</p>
+                    </div>
+                    <Badge variant="default">Completed</Badge>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Recent Job Applications (bottom-left) */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Recent Applications</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {recentApplications.length === 0 ? (
+              <div className="text-center py-8 text-primary-400">No pending applications</div>
+            ) : (
+              <div className="space-y-3">
+                {recentApplications.map((app: { id: string; applied_at: string; status: string; ba_profiles: { name: string }; jobs: { title: string; brand: string } }) => (
+                  <div key={app.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-medium text-gray-900">{app.ba_profiles?.name}</p>
+                      <p className="text-sm text-primary-400">{app.jobs?.title} ({app.jobs?.brand})</p>
+                      <p className="text-xs text-gray-400">{new Date(app.applied_at).toLocaleDateString()}</p>
+                    </div>
+                    <Link href={`/admin/applications/${app.id}`} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100">
                       Review
                     </Link>
                   </div>
@@ -214,107 +270,35 @@ export default async function AdminDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Active Jobs */}
+        {/* Pending BA Approvals (bottom-right) */}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Active Jobs</CardTitle>
-              <Link href="/admin/jobs" className="text-sm text-primary-400 hover:text-primary-500">
-                View all
-              </Link>
+              <CardTitle>Pending BA Approvals</CardTitle>
+              <Link href="/admin/bas/pending" className="text-sm text-primary-400 hover:text-primary-500">View all</Link>
             </div>
           </CardHeader>
           <CardContent>
-            {sortedActiveJobs.length === 0 ? (
-              <div className="text-center py-8 text-primary-400">
-                No active jobs
-              </div>
+            {pendingBAsList.length === 0 ? (
+              <div className="text-center py-8 text-primary-400">No pending approvals</div>
             ) : (
               <div className="space-y-3">
-                {sortedActiveJobs.map((job) => {
-                  const { displayStatus } = job
-                  return (
-                  <Link
-                    key={job.id}
-                    href={`/admin/jobs/${job.id}`}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                  >
+                {pendingBAsList.map((ba: { id: string; name: string; zip_code: string; created_at: string }) => (
+                  <div key={ba.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                     <div>
-                      <p className="font-medium text-gray-900">{job.title}</p>
-                      <p className="text-sm text-primary-400">
-                        {job.brand} - {getJobDateDisplay(job)}
-                      </p>
-                      <p className="text-sm text-primary-400">
-                        {job.slots_filled}/{job.slots} slots filled
-                      </p>
+                      <p className="font-medium text-gray-900">{ba.name}</p>
+                      <p className="text-sm text-primary-400">ZIP: {ba.zip_code} - Applied {new Date(ba.created_at).toLocaleDateString()}</p>
                     </div>
-                    <Badge variant={getJobStatusBadgeVariant(displayStatus)}>
-                      {formatJobStatus(displayStatus)}
-                    </Badge>
-                  </Link>
-                  )
-                })}
+                    <Link href={`/admin/bas/${ba.id}`} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100">
+                      Review
+                    </Link>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>
         </Card>
       </div>
-
-      {/* Recent Applications */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Recent Job Applications</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {recentApplications.length === 0 ? (
-            <div className="text-center py-8 text-primary-400">
-              No pending applications
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-4 text-sm font-medium text-primary-400">BA Name</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-primary-400">Job</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-primary-400">Applied</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-primary-400">Status</th>
-                    <th className="text-right py-3 px-4 text-sm font-medium text-primary-400">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentApplications.map((app: { id: string; applied_at: string; status: string; ba_profiles: { name: string }; jobs: { title: string; brand: string } }) => (
-                    <tr key={app.id} className="border-b border-gray-100">
-                      <td className="py-3 px-4 text-sm text-gray-900">
-                        {app.ba_profiles?.name}
-                      </td>
-                      <td className="py-3 px-4 text-sm text-gray-900">
-                        {app.jobs?.title} ({app.jobs?.brand})
-                      </td>
-                      <td className="py-3 px-4 text-sm text-primary-400">
-                        {new Date(app.applied_at).toLocaleDateString()}
-                      </td>
-                      <td className="py-3 px-4">
-                        <Badge variant="warning">Pending</Badge>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <Link
-                          href={`/admin/applications/${app.id}`}
-                          className="text-sm text-primary-400 hover:text-primary-500"
-                        >
-                          Review
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   )
 }

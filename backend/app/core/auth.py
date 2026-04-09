@@ -117,12 +117,10 @@ async def get_current_user(
     # Get user data from database
     supabase = get_supabase_client()
 
-    user_data = supabase.table("users").select("*").eq("id", user_id).single().execute()
+    user_data = supabase.table("users").select("*").eq("id", user_id).maybe_single().execute()
 
-    if not user_data.data:
-        raise credentials_exception
-
-    role = user_data.data.get("role", "ba")
+    # If no users row yet (trigger race condition during registration), default to "ba"
+    role = user_data.data.get("role", "ba") if user_data and user_data.data else "ba"
 
     # Get BA profile if user is a BA
     profile = None
@@ -131,10 +129,10 @@ async def get_current_user(
             supabase.table("ba_profiles")
             .select("*")
             .eq("user_id", user_id)
-            .single()
+            .maybe_single()
             .execute()
         )
-        if profile_data.data:
+        if profile_data and profile_data.data:
             profile = profile_data.data
 
     return CurrentUser(
@@ -205,10 +203,10 @@ def get_optional_user(
 
         supabase = get_supabase_client()
         user_data = (
-            supabase.table("users").select("*").eq("id", user_id).single().execute()
+            supabase.table("users").select("*").eq("id", user_id).maybe_single().execute()
         )
 
-        if not user_data.data:
+        if not user_data or not user_data.data:
             return None
 
         role = user_data.data.get("role", "ba")
