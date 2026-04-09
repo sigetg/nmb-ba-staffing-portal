@@ -169,10 +169,10 @@ export function JobsTable({ jobs }: JobsTableProps) {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-t-xl">
               <table className="w-full">
                 <thead>
-                  <tr className="bg-primary-400 [&>th:first-child]:rounded-tl-lg [&>th:last-child]:rounded-tr-lg">
+                  <tr className="bg-primary-400">
                     <th className={headerClass} onClick={() => handleSort('title')}>
                       Job <SortIcon column="title" activeColumn={sortColumn} direction={sortDirection} />
                     </th>
