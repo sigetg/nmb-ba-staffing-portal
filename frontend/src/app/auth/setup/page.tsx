@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { User, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Input, Card, CardContent, CardHeader, CardTitle, Alert, Select, MultiSelectSearch, Textarea } from '@/components/ui'
+import { uploadBAPhoto, uploadBAResume } from '@/lib/api'
 
 type Step = 'basic' | 'photos' | 'resume' | 'details' | 'availability'
 
@@ -160,7 +161,6 @@ export default function SetupPage() {
       if (!fullLengthFile) { setError('Full-length photo is required'); return }
       setStep('resume')
     } else if (step === 'resume') {
-      if (!resumeFile) { setError('Resume is required'); return }
       setStep('details')
     } else if (step === 'details') {
       if (languages.length === 0) { setError('Please select at least one language'); return }
@@ -183,42 +183,44 @@ export default function SetupPage() {
     try {
       if (!userId) { setError('Not authenticated'); return }
 
-      // 1. Upload headshot
-      const headshotExt = headshotFile!.name.split('.').pop()
-      const headshotPath = `${userId}/headshot.${headshotExt}`
-      const { error: headshotErr } = await supabase.storage
-        .from('ba-photos')
-        .upload(headshotPath, headshotFile!, { upsert: true })
-      if (headshotErr) { setError('Failed to upload headshot'); return }
+      // Get access token for API calls
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) { setError('Not authenticated'); return }
+      const token = session.access_token
 
-      const { data: { publicUrl: headshotUrl } } = supabase.storage
-        .from('ba-photos')
-        .getPublicUrl(headshotPath)
+      // 1. Upload headshot via backend API
+      const { url: headshotUrl } = await uploadBAPhoto(token, headshotFile!, 'headshot')
 
-      // 2. Upload full-length photo
-      const fullLengthExt = fullLengthFile!.name.split('.').pop()
-      const fullLengthPath = `${userId}/full-length.${fullLengthExt}`
-      const { error: fullLengthErr } = await supabase.storage
-        .from('ba-photos')
-        .upload(fullLengthPath, fullLengthFile!, { upsert: true })
-      if (fullLengthErr) { setError('Failed to upload full-length photo'); return }
+      // 2. Upload full-length photo via backend API
+      const { url: fullLengthUrl } = await uploadBAPhoto(token, fullLengthFile!, 'full_length')
 
-      const { data: { publicUrl: fullLengthUrl } } = supabase.storage
-        .from('ba-photos')
-        .getPublicUrl(fullLengthPath)
+      // 3. Upload resume (optional)
+      let resumeUrl: string | null = null
+      if (resumeFile) {
+        const { url } = await uploadBAResume(token, resumeFile)
+        resumeUrl = url
+      }
 
-      // 3. Upload resume
-      const resumePath = `${userId}/resume.pdf`
-      const { error: resumeErr } = await supabase.storage
-        .from('ba-resumes')
-        .upload(resumePath, resumeFile!, { upsert: true })
-      if (resumeErr) { setError('Failed to upload resume'); return }
+      // 4. Geocode zip code (best-effort)
+      let latitude: number | null = null
+      let longitude: number | null = null
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+        const { data: { session } } = await supabase.auth.getSession()
+        const geoRes = await fetch(`${apiUrl}/api/bas/geocode-zip?zip_code=${zipCode.trim()}`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${session?.access_token}` },
+        })
+        if (geoRes.ok) {
+          const geo = await geoRes.json()
+          latitude = geo.latitude
+          longitude = geo.longitude
+        }
+      } catch {
+        // Geocoding failure is non-blocking
+      }
 
-      const { data: { publicUrl: resumeUrl } } = supabase.storage
-        .from('ba-resumes')
-        .getPublicUrl(resumePath)
-
-      // 4. Create ba_profiles row
+      // 5. Create ba_profiles row
       const { error: profileError, data: profileData } = await supabase
         .from('ba_profiles')
         .insert({
@@ -232,6 +234,8 @@ export default function SetupPage() {
           shirt_size: shirtSize,
           additional_info: additionalInfo.trim() || null,
           resume_url: resumeUrl,
+          latitude,
+          longitude,
         })
         .select('id')
         .single()
@@ -241,7 +245,7 @@ export default function SetupPage() {
         return
       }
 
-      // 5. Insert photo records
+      // 6. Insert photo records
       await supabase.from('ba_photos').insert([
         { ba_id: profileData.id, photo_type: 'headshot', url: headshotUrl },
         { ba_id: profileData.id, photo_type: 'full_length', url: fullLengthUrl },
@@ -324,15 +328,18 @@ export default function SetupPage() {
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="(555) 123-4567"
                 />
-                <Input
-                  label="Zip Code"
-                  type="text"
-                  name="zipCode"
-                  value={zipCode}
-                  onChange={(e) => setZipCode(e.target.value.replace(/\D/g, '').slice(0, 5))}
-                  placeholder="12345"
-                  maxLength={5}
-                />
+                <div>
+                  <Input
+                    label="Work Area ZIP Code"
+                    type="text"
+                    name="zipCode"
+                    value={zipCode}
+                    onChange={(e) => setZipCode(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                    placeholder="12345"
+                    maxLength={5}
+                  />
+                  <p className="text-xs text-primary-400 mt-1">Enter the ZIP code where you&apos;d like to find work</p>
+                </div>
                 <Button type="submit" className="w-full">Continue</Button>
               </form>
             )}
@@ -435,7 +442,7 @@ export default function SetupPage() {
                   ) : (
                     <div className="space-y-2">
                       <FileText className="w-12 h-12 mx-auto text-gray-300" />
-                      <p className="text-primary-400">Upload your resume (PDF)</p>
+                      <p className="text-primary-400">Upload your resume (PDF, optional)</p>
                       <label className="cursor-pointer">
                         <span className="inline-block px-4 py-2 bg-primary-400 text-white rounded-lg hover:bg-primary-500 text-sm font-medium">
                           Choose File
@@ -548,6 +555,22 @@ export default function SetupPage() {
             )}
           </CardContent>
         </Card>
+
+        <div className="mt-6 text-center text-sm">
+          <span className="text-primary-400">
+            Already have an account?{' '}
+          </span>
+          <button
+            type="button"
+            onClick={async () => {
+              await supabase.auth.signOut()
+              router.push('/')
+            }}
+            className="font-medium text-primary-400 hover:text-primary-500"
+          >
+            Sign in
+          </button>
+        </div>
       </div>
     </div>
   )
