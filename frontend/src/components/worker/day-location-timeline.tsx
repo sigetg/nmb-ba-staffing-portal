@@ -25,7 +25,7 @@ export function DayLocationTimeline({ locations, checkIns, currentLocationId }: 
         const isActive = loc.id === currentLocationId && ci && !ci.check_out_time
         const isCompleted = ci && (ci.check_out_time || ci.skipped)
         const isSkipped = ci?.skipped
-        const isPending = !ci
+        const _isPending = !ci
 
         return (
           <div key={loc.id} className="flex items-start gap-3">

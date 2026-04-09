@@ -140,7 +140,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     )
   }
 
-  const canApply = profile?.status === 'approved' && !application && job.slots_filled < job.slots
+  const _canApply = profile?.status === 'approved' && !application && job.slots_filled < job.slots
   const slotsAvailable = job.slots - job.slots_filled
 
   return (

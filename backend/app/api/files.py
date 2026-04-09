@@ -1,6 +1,5 @@
 import logging
 import time
-from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
@@ -22,8 +21,8 @@ async def upload_job_photo(
     file: UploadFile = File(...),
     job_id: str = Form(...),
     photo_type: str = Form(...),
-    job_day_location_id: Optional[str] = Form(None),
-    ba_id: Optional[str] = Form(None),
+    job_day_location_id: str | None = Form(None),
+    ba_id: str | None = Form(None),
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """Upload a job photo to Dropbox and insert into job_photos table."""
@@ -41,7 +40,9 @@ async def upload_job_photo(
 
     ext = (file.filename or "photo.jpg").rsplit(".", 1)[-1]
     timestamp = int(time.time() * 1000)
-    dropbox_path = f"{PORTAL_ROOT}/job-photos/{current_user.id}/{job_id}/{photo_type}-{timestamp}.{ext}"
+    dropbox_path = (
+        f"{PORTAL_ROOT}/job-photos/{current_user.id}/{job_id}/{photo_type}-{timestamp}.{ext}"
+    )
 
     url = dropbox_storage.upload_file(file_bytes, dropbox_path)
 

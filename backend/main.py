@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health, auth, jobs, bas, admin, files, job_types, reports
+from app.api import admin, auth, bas, files, health, job_types, jobs, reports
 from app.core.config import settings
 
 app = FastAPI(

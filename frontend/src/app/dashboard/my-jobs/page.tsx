@@ -32,21 +32,63 @@ async function getMyJobs(userId: string, impersonatedBAId?: string) {
   const { data: profile } = await profileQuery
 
   if (!profile) {
-    return { applications: [] as Application[], activeJobId: null as string | null, activeCheckInTime: null as string | null, isMultiDayActive: false }
+    return {
+      applications: [] as Application[],
+      activeJobId: null as string | null,
+      activeCheckInTime: null as string | null,
+      isMultiDayActive: false,
+      startedJobIds: new Set<string>(),
+      completedByCheckoutIds: new Set<string>(),
+    }
   }
 
   // Get all applications with job details including days/locations
-  const { data: applications } = await supabase
-    .from('job_applications')
-    .select('*, jobs(*, job_days(*, job_day_locations(*)))')
-    .eq('ba_id', profile.id)
-    .order('applied_at', { ascending: false })
+  const [{ data: applications }, { data: legacyCheckIns }, { data: allLocationCIs }] = await Promise.all([
+    supabase
+      .from('job_applications')
+      .select('*, jobs(*, job_days(*, job_day_locations(*)))')
+      .eq('ba_id', profile.id)
+      .order('applied_at', { ascending: false }),
+    supabase
+      .from('check_ins')
+      .select('job_id, check_in_time, check_out_time')
+      .eq('ba_id', profile.id),
+    supabase
+      .from('location_check_ins')
+      .select('id, check_in_time, check_out_time, skipped, job_day_locations!inner(job_id)')
+      .eq('ba_id', profile.id)
+      .eq('skipped', false),
+  ])
 
-  // Check for active legacy check-in
-  const { data: legacyCheckIns } = await supabase
-    .from('check_ins')
-    .select('job_id, check_in_time, check_out_time')
-    .eq('ba_id', profile.id)
+  // Build started/completed sets from location check-ins
+  const startedJobIds = new Set<string>()
+  const jobCheckoutMap = new Map<string, { total: number; checkedOut: number }>()
+  for (const ci of (allLocationCIs || []) as unknown as { check_in_time: string; check_out_time: string | null; job_day_locations: { job_id: string } }[]) {
+    const jobId = ci.job_day_locations.job_id
+    startedJobIds.add(jobId)
+    const entry = jobCheckoutMap.get(jobId) || { total: 0, checkedOut: 0 }
+    entry.total++
+    if (ci.check_out_time) entry.checkedOut++
+    jobCheckoutMap.set(jobId, entry)
+  }
+  // Also check legacy check-ins for started/completed
+  for (const ci of (legacyCheckIns || [])) {
+    if (ci.check_in_time) {
+      startedJobIds.add(ci.job_id)
+      if (ci.check_out_time) {
+        const entry = jobCheckoutMap.get(ci.job_id) || { total: 0, checkedOut: 0 }
+        entry.total++
+        entry.checkedOut++
+        jobCheckoutMap.set(ci.job_id, entry)
+      }
+    }
+  }
+  const completedByCheckoutIds = new Set<string>()
+  for (const [jobId, entry] of jobCheckoutMap) {
+    if (entry.total > 0 && entry.total === entry.checkedOut) {
+      completedByCheckoutIds.add(jobId)
+    }
+  }
 
   let activeJobId: string | null = null
   let activeCheckInTime: string | null = null
@@ -79,6 +121,8 @@ async function getMyJobs(userId: string, impersonatedBAId?: string) {
     activeJobId,
     activeCheckInTime,
     isMultiDayActive,
+    startedJobIds,
+    completedByCheckoutIds,
   }
 }
 
@@ -95,24 +139,41 @@ export default async function MyJobsPage() {
   const cookieStore = await cookies()
   const impersonatedBAId = cookieStore.get('impersonate_ba_id')?.value
 
-  const { applications, activeJobId, activeCheckInTime, isMultiDayActive } = await getMyJobs(user.id, impersonatedBAId)
+  const { applications, activeJobId, activeCheckInTime, startedJobIds, completedByCheckoutIds } = await getMyJobs(user.id, impersonatedBAId)
 
   const activeJobApp = activeJobId
     ? applications.find(app => app.jobs.id === activeJobId)
     : null
 
   // Categorize jobs
-  const upcoming = applications.filter(app => {
-    if (app.status !== 'approved') return false
+  const upcoming: Application[] = []
+  const inProgressBetweenDays: Application[] = []
+  const completed: Application[] = []
+
+  for (const app of applications) {
+    if (app.status !== 'approved') continue
+    const jobId = app.jobs.id
     const displayStatus = getMultiDayDisplayStatus(app.jobs)
-    return displayStatus === 'upcoming' || displayStatus === 'in_progress'
-  })
+
+    // Skip active job (shown in active banner)
+    if (jobId === activeJobId) continue
+
+    // Completed by checkout
+    if (completedByCheckoutIds.has(jobId)) {
+      completed.push(app)
+      continue
+    }
+
+    if (displayStatus === 'completed') {
+      completed.push(app)
+    } else if (displayStatus === 'in_progress' && startedJobIds.has(jobId)) {
+      inProgressBetweenDays.push(app)
+    } else if (displayStatus === 'upcoming' || displayStatus === 'in_progress') {
+      upcoming.push(app)
+    }
+  }
+
   const pending = applications.filter(app => app.status === 'pending')
-  const completed = applications.filter(app => {
-    if (app.status !== 'approved') return false
-    const displayStatus = getMultiDayDisplayStatus(app.jobs)
-    return displayStatus === 'completed'
-  })
   const rejected = applications.filter(app => app.status === 'rejected')
 
   const renderJobCard = (app: Application, showActions: boolean = false) => {
@@ -261,6 +322,24 @@ export default async function MyJobsPage() {
         </Link>
       )}
 
+      {/* In Progress (between days) */}
+      {inProgressBetweenDays.length > 0 && (
+        <Card className="border-amber-200">
+          <div className="px-6 py-4 border-b border-amber-200 bg-amber-50">
+            <h2 className="text-lg font-semibold text-amber-900 flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-amber-600" />
+              In Progress
+              <Badge variant="warning">{inProgressBetweenDays.length}</Badge>
+            </h2>
+          </div>
+          <CardContent>
+            <div className="space-y-3">
+              {inProgressBetweenDays.map((app) => renderJobCard(app, true))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Upcoming Jobs */}
       <Card>
         <div className="px-6 py-4 border-b border-gray-200">
@@ -352,7 +431,7 @@ export default async function MyJobsPage() {
                     <p className="text-sm font-medium text-gray-900">
                       ${app.jobs.pay_rate}/hr
                     </p>
-                    <Badge variant="success">Completed</Badge>
+                    <Badge variant="info">Completed</Badge>
                   </div>
                 </div>
               ))}

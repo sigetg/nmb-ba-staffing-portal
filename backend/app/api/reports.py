@@ -1,19 +1,20 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import List
 
-from app.core.auth import get_current_admin, CurrentUser
+from app.core.auth import CurrentUser, get_current_admin
 from app.core.supabase import get_supabase_client
 
 router = APIRouter()
 
 
 class ReportRequest(BaseModel):
-    job_ids: List[str]
+    job_ids: list[str]
 
 
 @router.post("/generate")
-async def generate_report(data: ReportRequest, current_user: CurrentUser = Depends(get_current_admin)):
+async def generate_report(
+    data: ReportRequest, current_user: CurrentUser = Depends(get_current_admin)
+):
     """Generate aggregated report data for given job IDs."""
     supabase = get_supabase_client()
 
@@ -31,7 +32,7 @@ async def generate_report(data: ReportRequest, current_user: CurrentUser = Depen
         raise HTTPException(status_code=404, detail="No jobs found")
 
     # Verify all jobs are same type
-    type_ids = set(j.get("job_type_id") for j in jobs.data if j.get("job_type_id"))
+    type_ids = {j.get("job_type_id") for j in jobs.data if j.get("job_type_id")}
     if len(type_ids) > 1:
         raise HTTPException(status_code=400, detail="All jobs must be the same type for a report")
 
@@ -58,7 +59,7 @@ async def generate_report(data: ReportRequest, current_user: CurrentUser = Depen
     )
 
     # Fetch BA profiles for names
-    ba_ids = list(set(r["ba_id"] for r in (responses.data or [])))
+    ba_ids = list({r["ba_id"] for r in (responses.data or [])})
     ba_map = {}
     if ba_ids:
         bas = supabase.table("ba_profiles").select("id, name").in_("id", ba_ids).execute()
@@ -70,48 +71,44 @@ async def generate_report(data: ReportRequest, current_user: CurrentUser = Depen
         # Multi-day check-ins
         loc_checkins = (
             supabase.table("location_check_ins")
-            .select("*, job_day_locations!inner(job_id, location, job_day_id, job_days:job_day_id(date))")
+            .select(
+                "*, job_day_locations!inner(job_id, location, job_day_id, job_days:job_day_id(date))"
+            )
             .eq("job_day_locations.job_id", job_id)
             .execute()
         )
-        for lci in (loc_checkins.data or []):
-            attendance.append({
-                "job_id": job_id,
-                "ba_id": lci["ba_id"],
-                "ba_name": ba_map.get(lci["ba_id"], "Unknown"),
-                "check_in_time": lci["check_in_time"],
-                "check_out_time": lci.get("check_out_time"),
-                "location": lci.get("job_day_locations", {}).get("location"),
-            })
+        for lci in loc_checkins.data or []:
+            attendance.append(
+                {
+                    "job_id": job_id,
+                    "ba_id": lci["ba_id"],
+                    "ba_name": ba_map.get(lci["ba_id"], "Unknown"),
+                    "check_in_time": lci["check_in_time"],
+                    "check_out_time": lci.get("check_out_time"),
+                    "location": lci.get("job_day_locations", {}).get("location"),
+                }
+            )
 
         # Legacy check-ins
-        legacy = (
-            supabase.table("check_ins")
-            .select("*")
-            .eq("job_id", job_id)
-            .execute()
-        )
-        for ci in (legacy.data or []):
-            attendance.append({
-                "job_id": job_id,
-                "ba_id": ci["ba_id"],
-                "ba_name": ba_map.get(ci["ba_id"], "Unknown"),
-                "check_in_time": ci["check_in_time"],
-                "check_out_time": ci.get("check_out_time"),
-                "location": None,
-            })
+        legacy = supabase.table("check_ins").select("*").eq("job_id", job_id).execute()
+        for ci in legacy.data or []:
+            attendance.append(
+                {
+                    "job_id": job_id,
+                    "ba_id": ci["ba_id"],
+                    "ba_name": ba_map.get(ci["ba_id"], "Unknown"),
+                    "check_in_time": ci["check_in_time"],
+                    "check_out_time": ci.get("check_out_time"),
+                    "location": None,
+                }
+            )
 
     # Fetch photos
-    photos = (
-        supabase.table("job_photos")
-        .select("*")
-        .in_("job_id", data.job_ids)
-        .execute()
-    )
+    photos = supabase.table("job_photos").select("*").in_("job_id", data.job_ids).execute()
 
     # Build per-BA response data
     per_ba_responses = {}
-    for resp in (responses.data or []):
+    for resp in responses.data or []:
         ba_id = resp["ba_id"]
         job_id = resp["job_id"]
         key = f"{ba_id}_{job_id}"
@@ -128,7 +125,7 @@ async def generate_report(data: ReportRequest, current_user: CurrentUser = Depen
     kpi_aggregates = {}
     mc_aggregates = {}
 
-    for resp in (responses.data or []):
+    for resp in responses.data or []:
         for val in resp.get("checkout_response_values", []):
             if val.get("kpi_id") and val.get("numeric_value") is not None:
                 kpi_id = val["kpi_id"]
@@ -145,7 +142,7 @@ async def generate_report(data: ReportRequest, current_user: CurrentUser = Depen
                 mc_aggregates[q_id][opt_id] = mc_aggregates[q_id].get(opt_id, 0) + 1
 
     # Calculate averages
-    for kpi_id, agg in kpi_aggregates.items():
+    for _kpi_id, agg in kpi_aggregates.items():
         count = len(agg["values"])
         agg["avg"] = round(agg["sum"] / count, 2) if count > 0 else 0
         agg["count"] = count
@@ -154,7 +151,10 @@ async def generate_report(data: ReportRequest, current_user: CurrentUser = Depen
     for q_id, options in mc_aggregates.items():
         total = sum(options.values())
         mc_aggregates[q_id] = {
-            opt_id: {"count": count, "percentage": round(count / total * 100, 1) if total > 0 else 0}
+            opt_id: {
+                "count": count,
+                "percentage": round(count / total * 100, 1) if total > 0 else 0,
+            }
             for opt_id, count in options.items()
         }
 

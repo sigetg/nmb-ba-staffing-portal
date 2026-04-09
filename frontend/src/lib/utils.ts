@@ -17,7 +17,7 @@ export function getJobStatusBadgeVariant(status: string): 'default' | 'info' | '
     draft: 'default',
     upcoming: 'info',
     in_progress: 'success',
-    completed: 'default',
+    completed: 'info',
     cancelled: 'error',
     archived: 'default',
   }

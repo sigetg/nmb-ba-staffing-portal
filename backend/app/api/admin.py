@@ -1,20 +1,19 @@
-from fastapi import APIRouter, HTTPException, Query, Depends, Header
-from pydantic import BaseModel
-from typing import Optional, List
 from datetime import datetime, timedelta
 
-from app.core.auth import get_current_admin, CurrentUser
-from app.core.config import settings
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+
+from app.core.auth import CurrentUser, get_current_admin
 from app.core.supabase import get_supabase_client
 from app.services.email import (
     get_ba_email,
     get_job_display_info,
-    send_ba_approved_email,
-    send_ba_rejected_email,
-    send_ba_suspended_email,
-    send_ba_reinstated_email,
     send_application_approved_email,
     send_application_rejected_email,
+    send_ba_approved_email,
+    send_ba_reinstated_email,
+    send_ba_rejected_email,
+    send_ba_suspended_email,
     send_job_reminder_email,
 )
 
@@ -23,23 +22,23 @@ router = APIRouter()
 
 class BAApproval(BaseModel):
     status: str  # "approved", "rejected", or "suspended"
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class ApplicationStatusUpdate(BaseModel):
     status: str  # "approved" or "rejected"
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class JobAssignment(BaseModel):
-    ba_ids: List[str]
+    ba_ids: list[str]
 
 
 class PaymentTrigger(BaseModel):
     job_id: str
     ba_id: str
     amount: float
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class BANotesUpdate(BaseModel):
@@ -67,11 +66,7 @@ async def get_dashboard(
         .execute()
     )
 
-    total_bas = (
-        supabase.table("ba_profiles")
-        .select("*", count="exact", head=True)
-        .execute()
-    )
+    total_bas = supabase.table("ba_profiles").select("*", count="exact", head=True).execute()
 
     active_jobs = (
         supabase.table("jobs")
@@ -138,12 +133,7 @@ async def update_ba_status(
     update_data = {"status": approval.status, "updated_at": updated_at}
     if approval.notes is not None:
         update_data["admin_notes"] = approval.notes
-    result = (
-        supabase.table("ba_profiles")
-        .update(update_data)
-        .eq("id", ba_id)
-        .execute()
-    )
+    result = supabase.table("ba_profiles").update(update_data).eq("id", ba_id).execute()
 
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to update BA status")
@@ -178,13 +168,7 @@ async def update_ba_notes(
     supabase = get_supabase_client()
 
     # Check BA exists
-    existing = (
-        supabase.table("ba_profiles")
-        .select("id")
-        .eq("id", ba_id)
-        .single()
-        .execute()
-    )
+    existing = supabase.table("ba_profiles").select("id").eq("id", ba_id).single().execute()
     if not existing.data:
         raise HTTPException(status_code=404, detail="BA not found")
 
@@ -213,7 +197,9 @@ async def assign_bas_to_job(
     # Check job exists
     job = (
         supabase.table("jobs")
-        .select("slots, slots_filled, title, date, location, start_time, job_days(date, job_day_locations(location, start_time))")
+        .select(
+            "slots, slots_filled, title, date, location, start_time, job_days(date, job_day_locations(location, start_time))"
+        )
         .eq("id", job_id)
         .single()
         .execute()
@@ -234,11 +220,13 @@ async def assign_bas_to_job(
     for ba_id in assignment.ba_ids:
         result = (
             supabase.table("job_applications")
-            .update({
-                "status": "approved",
-                "reviewed_at": datetime.utcnow().isoformat(),
-                "reviewed_by": current_user.id,
-            })
+            .update(
+                {
+                    "status": "approved",
+                    "reviewed_at": datetime.utcnow().isoformat(),
+                    "reviewed_by": current_user.id,
+                }
+            )
             .eq("job_id", job_id)
             .eq("ba_id", ba_id)
             .eq("status", "pending")
@@ -261,9 +249,11 @@ async def assign_bas_to_job(
 
     # Update slots_filled
     if updated > 0:
-        supabase.table("jobs").update({
-            "slots_filled": job.data["slots_filled"] + updated,
-        }).eq("id", job_id).execute()
+        supabase.table("jobs").update(
+            {
+                "slots_filled": job.data["slots_filled"] + updated,
+            }
+        ).eq("id", job_id).execute()
 
     return {
         "message": f"Assigned {updated} BAs to job",
@@ -313,16 +303,20 @@ async def unassign_ba_from_job(
         )
 
     # Update application to withdrawn
-    supabase.table("job_applications").update({
-        "status": "withdrawn",
-    }).eq("id", application.data["id"]).execute()
+    supabase.table("job_applications").update(
+        {
+            "status": "withdrawn",
+        }
+    ).eq("id", application.data["id"]).execute()
 
     # Update slots_filled
     job = supabase.table("jobs").select("slots_filled").eq("id", job_id).single().execute()
     if job.data and job.data["slots_filled"] > 0:
-        supabase.table("jobs").update({
-            "slots_filled": job.data["slots_filled"] - 1,
-        }).eq("id", job_id).execute()
+        supabase.table("jobs").update(
+            {
+                "slots_filled": job.data["slots_filled"] - 1,
+            }
+        ).eq("id", job_id).execute()
 
     return {"message": "BA unassigned from job"}
 
@@ -342,7 +336,9 @@ async def update_application_status(
     # Fetch application with job and BA data
     application = (
         supabase.table("job_applications")
-        .select("id, status, job_id, ba_id, jobs(id, title, date, location, start_time, slots_filled, job_days(date, job_day_locations(location, start_time))), ba_profiles(id, name, user_id)")
+        .select(
+            "id, status, job_id, ba_id, jobs(id, title, date, location, start_time, slots_filled, job_days(date, job_day_locations(location, start_time))), ba_profiles(id, name, user_id)"
+        )
         .eq("id", application_id)
         .single()
         .execute()
@@ -356,22 +352,28 @@ async def update_application_status(
     ba_data = application.data["ba_profiles"]
 
     # Update application
-    supabase.table("job_applications").update({
-        "status": body.status,
-        "reviewed_at": datetime.utcnow().isoformat(),
-        "reviewed_by": current_user.id,
-        "notes": body.notes,
-    }).eq("id", application_id).execute()
+    supabase.table("job_applications").update(
+        {
+            "status": body.status,
+            "reviewed_at": datetime.utcnow().isoformat(),
+            "reviewed_by": current_user.id,
+            "notes": body.notes,
+        }
+    ).eq("id", application_id).execute()
 
     # Adjust slots_filled
     if body.status == "approved" and previous_status != "approved":
-        supabase.table("jobs").update({
-            "slots_filled": job_data["slots_filled"] + 1,
-        }).eq("id", application.data["job_id"]).execute()
+        supabase.table("jobs").update(
+            {
+                "slots_filled": job_data["slots_filled"] + 1,
+            }
+        ).eq("id", application.data["job_id"]).execute()
     elif body.status == "rejected" and previous_status == "approved":
-        supabase.table("jobs").update({
-            "slots_filled": max(0, job_data["slots_filled"] - 1),
-        }).eq("id", application.data["job_id"]).execute()
+        supabase.table("jobs").update(
+            {
+                "slots_filled": max(0, job_data["slots_filled"] - 1),
+            }
+        ).eq("id", application.data["job_id"]).execute()
 
     # Send email
     email, name = get_ba_email(supabase, ba_data["id"])
@@ -411,7 +413,9 @@ async def send_job_reminders(
     # Get job_days happening tomorrow with their jobs and locations
     day_results = (
         supabase.table("job_days")
-        .select("job_id, date, job_day_locations(location, start_time), jobs!inner(id, title, status)")
+        .select(
+            "job_id, date, job_day_locations(location, start_time), jobs!inner(id, title, status)"
+        )
         .eq("date", tomorrow)
         .eq("jobs.status", "published")
         .execute()
@@ -486,11 +490,13 @@ async def get_job_attendance(
 
     ba_list = []
     for app in applications.data or []:
-        ba_list.append({
-            "ba_id": app["ba_id"],
-            "ba_name": app["ba_profiles"]["name"] if app.get("ba_profiles") else None,
-            "ba_phone": app["ba_profiles"]["phone"] if app.get("ba_profiles") else None,
-        })
+        ba_list.append(
+            {
+                "ba_id": app["ba_id"],
+                "ba_name": app["ba_profiles"]["name"] if app.get("ba_profiles") else None,
+                "ba_phone": app["ba_profiles"]["phone"] if app.get("ba_profiles") else None,
+            }
+        )
 
     ba_ids = [b["ba_id"] for b in ba_list]
 
@@ -539,13 +545,15 @@ async def get_job_attendance(
     legacy_attendance = []
     for ba in ba_list:
         checkin = next((ci for ci in legacy_check_ins if ci["ba_id"] == ba["ba_id"]), None)
-        legacy_attendance.append({
-            **ba,
-            "checked_in": checkin is not None,
-            "check_in_time": checkin["check_in_time"] if checkin else None,
-            "checked_out": checkin.get("check_out_time") is not None if checkin else False,
-            "check_out_time": checkin.get("check_out_time") if checkin else None,
-        })
+        legacy_attendance.append(
+            {
+                **ba,
+                "checked_in": checkin is not None,
+                "check_in_time": checkin["check_in_time"] if checkin else None,
+                "checked_out": checkin.get("check_out_time") is not None if checkin else False,
+                "check_out_time": checkin.get("check_out_time") if checkin else None,
+            }
+        )
 
     return {
         "job": job.data,
@@ -573,8 +581,8 @@ async def trigger_payment(
 
 @router.get("/payments")
 async def list_payments(
-    job_id: Optional[str] = None,
-    ba_id: Optional[str] = None,
+    job_id: str | None = None,
+    ba_id: str | None = None,
     limit: int = Query(20, le=100),
     offset: int = 0,
     current_user: CurrentUser = Depends(get_current_admin),
@@ -601,8 +609,8 @@ async def list_payments(
 
 @router.get("/reports/jobs")
 async def get_jobs_report(
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     current_user: CurrentUser = Depends(get_current_admin),
 ):
     """Generate jobs report."""
@@ -697,13 +705,15 @@ async def get_bas_report(
                 check_out = datetime.fromisoformat(checkin["check_out_time"].replace("Z", "+00:00"))
                 total_hours += (check_out - check_in).total_seconds() / 3600
 
-        ba_stats.append({
-            "id": ba["id"],
-            "name": ba["name"],
-            "zip_code": ba["zip_code"],
-            "jobs_completed": len(checkins.data or []),
-            "total_hours": round(total_hours, 2),
-        })
+        ba_stats.append(
+            {
+                "id": ba["id"],
+                "name": ba["name"],
+                "zip_code": ba["zip_code"],
+                "jobs_completed": len(checkins.data or []),
+                "total_hours": round(total_hours, 2),
+            }
+        )
 
     # Sort by jobs completed
     ba_stats.sort(key=lambda x: x["jobs_completed"], reverse=True)

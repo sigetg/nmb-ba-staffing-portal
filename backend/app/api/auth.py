@@ -1,8 +1,7 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
-from typing import Optional
 
-from app.core.auth import get_current_user, CurrentUser
+from app.core.auth import CurrentUser, get_current_user
 
 router = APIRouter()
 
@@ -22,7 +21,7 @@ class UserResponse(BaseModel):
     id: str
     email: str
     role: str
-    profile: Optional[dict] = None
+    profile: dict | None = None
 
 
 @router.post("/login")

@@ -1,11 +1,11 @@
 import logging
 import time
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
-from typing import Optional
-from pydantic import BaseModel
+
 import httpx
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
+from pydantic import BaseModel
 
 from app.core.config import settings
 from app.core.supabase import get_supabase_client
@@ -22,15 +22,15 @@ _JWKS_CACHE_TTL = 300  # 5 minutes
 
 class TokenData(BaseModel):
     user_id: str
-    email: Optional[str] = None
-    role: Optional[str] = None
+    email: str | None = None
+    role: str | None = None
 
 
 class CurrentUser(BaseModel):
     id: str
     email: str
     role: str
-    profile: Optional[dict] = None
+    profile: dict | None = None
 
 
 def _get_jwks() -> dict:
@@ -75,7 +75,7 @@ def _decode_token_jwks(token: str) -> dict:
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> CurrentUser:
     """
     Validate the JWT token from Supabase and return the current user.
@@ -112,7 +112,7 @@ async def get_current_user(
             email = user_response.user.email or ""
         except Exception as e2:
             logger.error("Supabase auth fallback also failed: %s", e2)
-            raise credentials_exception
+            raise credentials_exception from e2
 
     # Get user data from database
     supabase = get_supabase_client()
@@ -172,10 +172,8 @@ async def get_current_ba(
 
 
 def get_optional_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(
-        HTTPBearer(auto_error=False)
-    ),
-) -> Optional[CurrentUser]:
+    credentials: HTTPAuthorizationCredentials | None = Depends(HTTPBearer(auto_error=False)),
+) -> CurrentUser | None:
     """
     Get the current user if authenticated, otherwise return None.
     Useful for endpoints that support both authenticated and anonymous access.
@@ -202,9 +200,7 @@ def get_optional_user(
             email = user_response.user.email or ""
 
         supabase = get_supabase_client()
-        user_data = (
-            supabase.table("users").select("*").eq("id", user_id).maybe_single().execute()
-        )
+        user_data = supabase.table("users").select("*").eq("id", user_id).maybe_single().execute()
 
         if not user_data or not user_data.data:
             return None

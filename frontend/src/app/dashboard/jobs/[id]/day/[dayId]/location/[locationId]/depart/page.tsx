@@ -2,13 +2,12 @@
 
 import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Alert } from '@/components/ui'
 import { ChevronLeft, MapPin, Camera, Loader2, CheckCircle2, Navigation } from 'lucide-react'
 import { uploadJobPhoto } from '@/lib/api'
-import type { JobDayLocation, LocationCheckIn } from '@/types'
+import type { JobDayLocation } from '@/types'
 import { getImpersonatedBAId } from '@/lib/impersonation'
 
 export default function DepartLocationPage({ params }: { params: Promise<{ id: string; dayId: string; locationId: string }> }) {

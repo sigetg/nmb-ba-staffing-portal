@@ -1,4 +1,5 @@
 import logging
+
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -76,11 +77,7 @@ def get_ba_email(supabase, ba_id: str) -> tuple[str | None, str | None]:
     """Resolve ba_id -> (email, name) via ba_profiles -> users join."""
     try:
         profile = (
-            supabase.table("ba_profiles")
-            .select("name, user_id")
-            .eq("id", ba_id)
-            .single()
-            .execute()
+            supabase.table("ba_profiles").select("name, user_id").eq("id", ba_id).single().execute()
         )
         if not profile.data:
             return None, None
@@ -113,11 +110,13 @@ def get_job_display_info(supabase, job_id: str, job_data: dict | None = None) ->
     # Check if job_days already in job_data
     days = (job_data or {}).get("job_days")
     if days is None:
-        result = supabase.table("job_days") \
-            .select("date, job_day_locations(location, start_time)") \
-            .eq("job_id", job_id) \
-            .order("date") \
+        result = (
+            supabase.table("job_days")
+            .select("date, job_day_locations(location, start_time)")
+            .eq("job_id", job_id)
+            .order("date")
             .execute()
+        )
         days = result.data or []
 
     if not days:
@@ -127,7 +126,9 @@ def get_job_display_info(supabase, job_id: str, job_data: dict | None = None) ->
     first, last = sorted_days[0], sorted_days[-1]
 
     if not date:
-        date = first["date"] if first["date"] == last["date"] else f'{first["date"]} to {last["date"]}'
+        date = (
+            first["date"] if first["date"] == last["date"] else f"{first['date']} to {last['date']}"
+        )
 
     first_locs = sorted_days[0].get("job_day_locations") or []
     if first_locs:
@@ -135,7 +136,7 @@ def get_job_display_info(supabase, job_id: str, job_data: dict | None = None) ->
             location = first_locs[0].get("location", "")
             all_locs = set()
             for d in sorted_days:
-                for loc in (d.get("job_day_locations") or []):
+                for loc in d.get("job_day_locations") or []:
                     all_locs.add(loc.get("location", ""))
             if len(all_locs) > 1:
                 location = f"{first_locs[0]['location']} (+{len(all_locs) - 1} more)"

@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Modal, ModalHeader, ModalTitle, ModalContent } from '@/components/ui/modal'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { KpiEditor } from './kpi-editor'
@@ -60,8 +59,42 @@ export function JobTypeManagerModal({ isOpen, onClose }: JobTypeManagerModalProp
   }, [supabase, selectedId])
 
   useEffect(() => {
-    if (isOpen) fetchTypes()
-  }, [isOpen, fetchTypes])
+    if (!isOpen) return
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      const { data } = await supabase
+        .from('job_types')
+        .select('*, job_type_kpis(*), job_type_questions(*, job_type_question_options(*))')
+        .eq('is_archived', false)
+        .order('sort_order')
+
+      if (cancelled) return
+
+      const sorted = (data || []).map((jt: JobType) => {
+        if (jt.job_type_kpis) {
+          jt.job_type_kpis.sort((a, b) => a.sort_order - b.sort_order)
+        }
+        if (jt.job_type_questions) {
+          jt.job_type_questions.sort((a, b) => a.sort_order - b.sort_order)
+          for (const q of jt.job_type_questions) {
+            if (q.job_type_question_options) {
+              q.job_type_question_options.sort((a, b) => a.sort_order - b.sort_order)
+            }
+          }
+        }
+        return jt
+      })
+
+      setTypes(sorted)
+      setLoading(false)
+
+      if (!selectedId && sorted.length > 0) {
+        setSelectedId(sorted[0].id)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [isOpen, supabase, selectedId])
 
   const selected = types.find((t) => t.id === selectedId)
 

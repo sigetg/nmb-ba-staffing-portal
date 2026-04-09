@@ -1,21 +1,21 @@
-from fastapi import APIRouter, HTTPException, Query, Depends
-from pydantic import BaseModel
-from typing import Optional, List, Tuple
-from enum import Enum
-from datetime import datetime
-import httpx
 import logging
+from datetime import datetime
+from enum import StrEnum
 
-from app.core.auth import get_current_user, get_current_ba, get_current_admin, CurrentUser
-from app.core.supabase import get_supabase_client
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+
+from app.core.auth import CurrentUser, get_current_admin, get_current_ba
 from app.core.config import settings
+from app.core.supabase import get_supabase_client
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-async def geocode_zip(zip_code: str) -> Tuple[float, float] | None:
+async def geocode_zip(zip_code: str) -> tuple[float, float] | None:
     """Geocode a US zip code using Google Maps Geocoding API. Returns (lat, lng) or None."""
     if not settings.google_maps_api_key:
         logger.warning("Google Maps API key not configured, skipping geocoding")
@@ -24,7 +24,11 @@ async def geocode_zip(zip_code: str) -> Tuple[float, float] | None:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(
                 "https://maps.googleapis.com/maps/api/geocode/json",
-                params={"address": zip_code, "components": "country:US", "key": settings.google_maps_api_key},
+                params={
+                    "address": zip_code,
+                    "components": "country:US",
+                    "key": settings.google_maps_api_key,
+                },
             )
             data = resp.json()
             if data.get("status") == "OK" and data.get("results"):
@@ -35,7 +39,7 @@ async def geocode_zip(zip_code: str) -> Tuple[float, float] | None:
     return None
 
 
-class BAStatus(str, Enum):
+class BAStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
@@ -47,21 +51,21 @@ class BAProfileCreate(BaseModel):
     phone: str
     zip_code: str
     availability: dict  # JSON structure for availability
-    languages: Optional[List[str]] = None
-    shirt_size: Optional[str] = None
-    additional_info: Optional[str] = None
-    resume_url: Optional[str] = None
+    languages: list[str] | None = None
+    shirt_size: str | None = None
+    additional_info: str | None = None
+    resume_url: str | None = None
 
 
 class BAProfileUpdate(BaseModel):
-    name: Optional[str] = None
-    phone: Optional[str] = None
-    zip_code: Optional[str] = None
-    availability: Optional[dict] = None
-    languages: Optional[List[str]] = None
-    shirt_size: Optional[str] = None
-    additional_info: Optional[str] = None
-    resume_url: Optional[str] = None
+    name: str | None = None
+    phone: str | None = None
+    zip_code: str | None = None
+    availability: dict | None = None
+    languages: list[str] | None = None
+    shirt_size: str | None = None
+    additional_info: str | None = None
+    resume_url: str | None = None
 
 
 class BAProfileResponse(BaseModel):
@@ -72,17 +76,17 @@ class BAProfileResponse(BaseModel):
     zip_code: str
     status: str
     availability: dict
-    languages: Optional[List[str]] = None
-    shirt_size: Optional[str] = None
-    additional_info: Optional[str] = None
-    admin_notes: Optional[str] = None
-    resume_url: Optional[str] = None
-    has_seen_welcome: Optional[bool] = None
-    stripe_account_id: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
+    languages: list[str] | None = None
+    shirt_size: str | None = None
+    additional_info: str | None = None
+    admin_notes: str | None = None
+    resume_url: str | None = None
+    has_seen_welcome: bool | None = None
+    stripe_account_id: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     created_at: str
-    updated_at: Optional[str] = None
+    updated_at: str | None = None
 
 
 class BAPhoto(BaseModel):
@@ -95,8 +99,8 @@ class BAPhoto(BaseModel):
 
 @router.get("/")
 async def list_bas(
-    status: Optional[BAStatus] = None,
-    zip_code: Optional[str] = None,
+    status: BAStatus | None = None,
+    zip_code: str | None = None,
     limit: int = Query(20, le=100),
     offset: int = 0,
     current_user: CurrentUser = Depends(get_current_admin),
@@ -131,11 +135,7 @@ async def get_my_profile(
     supabase = get_supabase_client()
 
     result = (
-        supabase.table("ba_profiles")
-        .select("*")
-        .eq("user_id", current_user.id)
-        .single()
-        .execute()
+        supabase.table("ba_profiles").select("*").eq("user_id", current_user.id).single().execute()
     )
 
     if not result.data:
@@ -154,11 +154,7 @@ async def create_profile(
 
     # Check if profile already exists
     existing = (
-        supabase.table("ba_profiles")
-        .select("id")
-        .eq("user_id", current_user.id)
-        .single()
-        .execute()
+        supabase.table("ba_profiles").select("id").eq("user_id", current_user.id).single().execute()
     )
 
     if existing.data:
@@ -182,11 +178,7 @@ async def create_profile(
     if profile.resume_url is not None:
         insert_data["resume_url"] = profile.resume_url
 
-    result = (
-        supabase.table("ba_profiles")
-        .insert(insert_data)
-        .execute()
-    )
+    result = supabase.table("ba_profiles").insert(insert_data).execute()
 
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create profile")
@@ -204,11 +196,7 @@ async def update_profile(
 
     # Get existing profile
     existing = (
-        supabase.table("ba_profiles")
-        .select("*")
-        .eq("user_id", current_user.id)
-        .single()
-        .execute()
+        supabase.table("ba_profiles").select("*").eq("user_id", current_user.id).single().execute()
     )
 
     if not existing.data:
@@ -240,10 +228,7 @@ async def update_profile(
     update_data["updated_at"] = datetime.utcnow().isoformat()
 
     result = (
-        supabase.table("ba_profiles")
-        .update(update_data)
-        .eq("user_id", current_user.id)
-        .execute()
+        supabase.table("ba_profiles").update(update_data).eq("user_id", current_user.id).execute()
     )
 
     if not result.data:
@@ -272,9 +257,7 @@ async def get_ba(
     """Get a specific BA by ID (admin only)."""
     supabase = get_supabase_client()
 
-    result = (
-        supabase.table("ba_profiles").select("*").eq("id", ba_id).single().execute()
-    )
+    result = supabase.table("ba_profiles").select("*").eq("id", ba_id).single().execute()
 
     if not result.data:
         raise HTTPException(status_code=404, detail="BA not found")
@@ -284,7 +267,7 @@ async def get_ba(
 
 @router.get("/my-jobs")
 async def get_my_jobs(
-    status: Optional[str] = None,
+    status: str | None = None,
     limit: int = Query(20, le=100),
     offset: int = 0,
     current_user: CurrentUser = Depends(get_current_ba),
@@ -294,11 +277,7 @@ async def get_my_jobs(
 
     # First get the BA profile
     profile = (
-        supabase.table("ba_profiles")
-        .select("id")
-        .eq("user_id", current_user.id)
-        .single()
-        .execute()
+        supabase.table("ba_profiles").select("id").eq("user_id", current_user.id).single().execute()
     )
 
     if not profile.data:
@@ -307,11 +286,7 @@ async def get_my_jobs(
     ba_id = profile.data["id"]
 
     # Get job applications with job details
-    query = (
-        supabase.table("job_applications")
-        .select("*, jobs(*)")
-        .eq("ba_id", ba_id)
-    )
+    query = supabase.table("job_applications").select("*, jobs(*)").eq("ba_id", ba_id)
 
     if status:
         query = query.eq("status", status)
@@ -324,12 +299,14 @@ async def get_my_jobs(
     jobs = []
     for app in result.data or []:
         job_data = app.get("jobs", {})
-        jobs.append({
-            "application_id": app["id"],
-            "application_status": app["status"],
-            "applied_at": app["applied_at"],
-            "job": job_data,
-        })
+        jobs.append(
+            {
+                "application_id": app["id"],
+                "application_status": app["status"],
+                "applied_at": app["applied_at"],
+                "job": job_data,
+            }
+        )
 
     return {"jobs": jobs, "total": len(jobs), "limit": limit, "offset": offset}
 
@@ -351,7 +328,7 @@ async def upload_photo(
     )
 
 
-@router.get("/photos", response_model=List[BAPhoto])
+@router.get("/photos", response_model=list[BAPhoto])
 async def get_my_photos(
     current_user: CurrentUser = Depends(get_current_ba),
 ):
@@ -360,11 +337,7 @@ async def get_my_photos(
 
     # Get BA profile
     profile = (
-        supabase.table("ba_profiles")
-        .select("id")
-        .eq("user_id", current_user.id)
-        .single()
-        .execute()
+        supabase.table("ba_profiles").select("id").eq("user_id", current_user.id).single().execute()
     )
 
     if not profile.data:

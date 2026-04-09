@@ -1,10 +1,11 @@
-from pydantic import BaseModel
 from datetime import datetime
-from enum import Enum
-from typing import Optional, Dict, Any
+from enum import StrEnum
+from typing import Any
+
+from pydantic import BaseModel
 
 
-class BAStatus(str, Enum):
+class BAStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
@@ -18,10 +19,10 @@ class BAProfile(BaseModel):
     phone: str
     zip_code: str
     status: BAStatus = BAStatus.PENDING
-    availability: Dict[str, Any] = {}
-    stripe_account_id: Optional[str] = None
+    availability: dict[str, Any] = {}
+    stripe_account_id: str | None = None
     created_at: datetime
-    updated_at: Optional[datetime] = None
+    updated_at: datetime | None = None
 
     class Config:
         from_attributes = True
