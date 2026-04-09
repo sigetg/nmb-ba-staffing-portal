@@ -163,7 +163,7 @@ export function BAsTable({ bas }: BAsTableProps) {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="bg-primary-500 [&>th:first-child]:rounded-tl-lg [&>th:last-child]:rounded-tr-lg">
+                  <tr className="bg-primary-400 [&>th:first-child]:rounded-tl-lg [&>th:last-child]:rounded-tr-lg">
                     <th className={headerClass} onClick={() => handleSort('name')}>
                       BA <SortIcon column="name" activeColumn={sortColumn} direction={sortDirection} />
                     </th>
@@ -227,7 +227,7 @@ export function BAsTable({ bas }: BAsTableProps) {
                                   await startImpersonation(ba.id)
                                   router.push('/dashboard')
                                 }}
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-sm text-amber-700 border border-amber-300 rounded-lg hover:bg-amber-50 transition-colors"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-sm text-primary-400 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors"
                                 title={`Login as ${ba.name}`}
                               >
                                 <Eye className="w-3.5 h-3.5" />

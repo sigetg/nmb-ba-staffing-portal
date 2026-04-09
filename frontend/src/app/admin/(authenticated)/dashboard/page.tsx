@@ -2,7 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle, Badge } from '@/components/ui'
 import { Users, Hourglass, UserCheck, Briefcase, Activity, ClipboardList } from 'lucide-react'
-import { formatJobStatus, getJobDisplayStatus, getJobStatusBadgeVariant, getLocalToday, parseLocalDate } from '@/lib/utils'
+import { formatJobStatus, getJobStatusBadgeVariant, getMultiDayDisplayStatus, getJobDateDisplay } from '@/lib/utils'
+import type { JobWithDays } from '@/types'
 
 async function getAdminDashboardData() {
   const supabase = await createClient()
@@ -32,14 +33,13 @@ async function getAdminDashboardData() {
     .order('created_at', { ascending: false })
     .limit(5)
 
-  // Get active jobs (today and future only)
+  // Get published jobs with days/locations
   const { data: activeJobsList } = await supabase
     .from('jobs')
-    .select('*')
+    .select('*, job_days(*, job_day_locations(*))')
     .eq('status', 'published')
-    .gte('date', getLocalToday())
-    .order('date', { ascending: true })
-    .limit(10)
+    .order('created_at', { ascending: false })
+    .limit(20)
 
   // Get recent applications
   const { data: recentApplications } = await supabase
@@ -59,7 +59,7 @@ async function getAdminDashboardData() {
       pendingApplications: pendingApplications || 0,
     },
     pendingBAsList: pendingBAsList || [],
-    activeJobsList: activeJobsList || [],
+    activeJobsList: (activeJobsList || []) as JobWithDays[],
     recentApplications: recentApplications || [],
   }
 }
@@ -67,14 +67,17 @@ async function getAdminDashboardData() {
 export default async function AdminDashboardPage() {
   const { stats, pendingBAsList, activeJobsList, recentApplications } = await getAdminDashboardData()
 
-  // Filter out completed same-day jobs and sort in_progress first
-  const sortedActiveJobs = (activeJobsList || [])
-    .map(job => ({ ...job, displayStatus: getJobDisplayStatus(job) }))
+  // Filter to upcoming/in_progress and sort in_progress first
+  const sortedActiveJobs = activeJobsList
+    .map(job => ({ ...job, displayStatus: getMultiDayDisplayStatus(job) }))
     .filter(job => job.displayStatus === 'in_progress' || job.displayStatus === 'upcoming')
     .sort((a, b) => {
       if (a.displayStatus === 'in_progress' && b.displayStatus !== 'in_progress') return -1
       if (b.displayStatus === 'in_progress' && a.displayStatus !== 'in_progress') return 1
-      return a.date.localeCompare(b.date)
+      // Sort by first day date
+      const aDate = [...(a.job_days || [])].sort((x, y) => x.date.localeCompare(y.date))[0]?.date || ''
+      const bDate = [...(b.job_days || [])].sort((x, y) => x.date.localeCompare(y.date))[0]?.date || ''
+      return aDate.localeCompare(bDate)
     })
     .slice(0, 5)
 
@@ -239,7 +242,7 @@ export default async function AdminDashboardPage() {
                     <div>
                       <p className="font-medium text-gray-900">{job.title}</p>
                       <p className="text-sm text-primary-400">
-                        {job.brand} - {parseLocalDate(job.date).toLocaleDateString()}
+                        {job.brand} - {getJobDateDisplay(job)}
                       </p>
                       <p className="text-sm text-primary-400">
                         {job.slots_filled}/{job.slots} slots filled
