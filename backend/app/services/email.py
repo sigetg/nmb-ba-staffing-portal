@@ -98,15 +98,8 @@ def get_ba_email(supabase, ba_id: str) -> tuple[str | None, str | None]:
 
 
 def get_job_display_info(supabase, job_id: str, job_data: dict | None = None) -> dict:
-    """Get display-ready date, location, start_time for a job (multi-day aware).
+    """Get display-ready date, location, start_time for a job from job_days.
     Returns {"date": str, "location": str, "start_time": str}."""
-    date = (job_data or {}).get("date") or ""
-    location = (job_data or {}).get("location") or ""
-    start_time = (job_data or {}).get("start_time") or ""
-
-    if date and location and start_time:
-        return {"date": date, "location": location, "start_time": start_time}
-
     # Check if job_days already in job_data
     days = (job_data or {}).get("job_days")
     if days is None:
@@ -120,28 +113,27 @@ def get_job_display_info(supabase, job_id: str, job_data: dict | None = None) ->
         days = result.data or []
 
     if not days:
-        return {"date": date, "location": location, "start_time": start_time}
+        return {"date": "", "location": "", "start_time": ""}
 
     sorted_days = sorted(days, key=lambda d: d["date"])
     first, last = sorted_days[0], sorted_days[-1]
 
-    if not date:
-        date = (
-            first["date"] if first["date"] == last["date"] else f"{first['date']} to {last['date']}"
-        )
+    date = (
+        first["date"] if first["date"] == last["date"] else f"{first['date']} to {last['date']}"
+    )
 
+    location = ""
+    start_time = ""
     first_locs = sorted_days[0].get("job_day_locations") or []
     if first_locs:
-        if not location:
-            location = first_locs[0].get("location", "")
-            all_locs = set()
-            for d in sorted_days:
-                for loc in d.get("job_day_locations") or []:
-                    all_locs.add(loc.get("location", ""))
-            if len(all_locs) > 1:
-                location = f"{first_locs[0]['location']} (+{len(all_locs) - 1} more)"
-        if not start_time:
-            start_time = first_locs[0].get("start_time", "")
+        location = first_locs[0].get("location", "")
+        all_locs = set()
+        for d in sorted_days:
+            for loc in d.get("job_day_locations") or []:
+                all_locs.add(loc.get("location", ""))
+        if len(all_locs) > 1:
+            location = f"{first_locs[0]['location']} (+{len(all_locs) - 1} more)"
+        start_time = first_locs[0].get("start_time", "")
 
     return {"date": date, "location": location, "start_time": start_time}
 

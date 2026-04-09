@@ -68,7 +68,6 @@ async def generate_report(
     # Fetch attendance data (location_check_ins)
     attendance = []
     for job_id in data.job_ids:
-        # Multi-day check-ins
         loc_checkins = (
             supabase.table("location_check_ins")
             .select(
@@ -86,20 +85,6 @@ async def generate_report(
                     "check_in_time": lci["check_in_time"],
                     "check_out_time": lci.get("check_out_time"),
                     "location": lci.get("job_day_locations", {}).get("location"),
-                }
-            )
-
-        # Legacy check-ins
-        legacy = supabase.table("check_ins").select("*").eq("job_id", job_id).execute()
-        for ci in legacy.data or []:
-            attendance.append(
-                {
-                    "job_id": job_id,
-                    "ba_id": ci["ba_id"],
-                    "ba_name": ba_map.get(ci["ba_id"], "Unknown"),
-                    "check_in_time": ci["check_in_time"],
-                    "check_out_time": ci.get("check_out_time"),
-                    "location": None,
                 }
             )
 

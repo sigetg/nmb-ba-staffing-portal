@@ -23,7 +23,7 @@ function getEarliestDate(job: JobWithDays): string {
     const dates = job.job_days.map(d => d.date).sort()
     return dates[0] || ''
   }
-  return job.date || ''
+  return ''
 }
 
 const STATUS_ORDER: Record<string, number> = {

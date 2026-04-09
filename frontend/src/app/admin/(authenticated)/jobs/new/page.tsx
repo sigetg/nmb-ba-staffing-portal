@@ -47,17 +47,11 @@ function WizardContent() {
         timezone = 'America/Chicago'
       }
 
-      // 1. Insert the job (legacy columns null for multi-day)
+      // 1. Insert the job
       const { data: job, error: insertError } = await supabase.from('jobs').insert({
         title: state.title.trim(),
         brand: state.brand.trim() || null,
         description: state.description.trim() || null,
-        location: null,
-        latitude: null,
-        longitude: null,
-        date: null,
-        start_time: null,
-        end_time: null,
         pay_rate: state.payRate ? parseFloat(state.payRate) : 0,
         slots: state.slots ? parseInt(state.slots) : 1,
         slots_filled: 0,

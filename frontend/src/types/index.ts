@@ -51,12 +51,6 @@ export interface Job {
   title: string
   brand: string
   description: string
-  location?: string | null
-  latitude?: number | null
-  longitude?: number | null
-  date?: string | null
-  start_time?: string | null
-  end_time?: string | null
   pay_rate: number
   slots: number
   slots_filled: number
@@ -118,7 +112,6 @@ export interface CheckoutResponse {
   job_id: string
   ba_id: string
   location_check_in_id?: string | null
-  check_in_id?: string | null
   created_at: string
   checkout_response_values?: CheckoutResponseValue[]
 }
@@ -197,28 +190,11 @@ export interface JobApplication {
   notes?: string
 }
 
-// Check-in types
-export interface CheckIn {
-  id: string
-  job_id: string
-  ba_id: string
-  check_in_time: string
-  check_out_time?: string
-  check_in_latitude: number
-  check_in_longitude: number
-  check_out_latitude?: number
-  check_out_longitude?: number
-}
-
 // Job with nested days/locations (for display helpers)
 export type JobWithDays = {
   id: string
   title: string
   brand: string
-  date: string | null
-  start_time: string | null
-  end_time: string | null
-  location: string | null
   pay_rate: number
   slots: number
   slots_filled: number

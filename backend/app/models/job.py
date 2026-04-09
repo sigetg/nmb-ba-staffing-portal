@@ -18,12 +18,6 @@ class Job(BaseModel):
     title: str
     brand: str
     description: str
-    location: str | None = None
-    latitude: float | None = None
-    longitude: float | None = None
-    date: datetime | None = None
-    start_time: str | None = None
-    end_time: str | None = None
     pay_rate: float
     slots: int
     slots_filled: int = 0
@@ -33,21 +27,6 @@ class Job(BaseModel):
     job_type_id: str | None = None
     created_at: datetime
     updated_at: datetime | None = None
-
-    class Config:
-        from_attributes = True
-
-
-class CheckIn(BaseModel):
-    id: str
-    job_id: str
-    ba_id: str
-    check_in_time: datetime
-    check_out_time: datetime | None = None
-    check_in_latitude: float
-    check_in_longitude: float
-    check_out_latitude: float | None = None
-    check_out_longitude: float | None = None
 
     class Config:
         from_attributes = True

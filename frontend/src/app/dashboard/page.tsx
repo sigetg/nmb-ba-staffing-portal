@@ -30,7 +30,6 @@ async function getDashboardData(profileId: string) {
     { data: applications },
     { count: pendingCount },
     { data: approvedApps },
-    { data: activeCheckIn },
     { data: allLocationCIs },
   ] = await Promise.all([
     supabase
@@ -49,13 +48,6 @@ async function getDashboardData(profileId: string) {
       .select('*, jobs!inner(*, job_days(*, job_day_locations(*)))')
       .eq('ba_id', profileId)
       .eq('status', 'approved'),
-    supabase
-      .from('check_ins')
-      .select('*, jobs(*)')
-      .eq('ba_id', profileId)
-      .is('check_out_time', null)
-      .limit(1)
-      .single(),
     supabase
       .from('location_check_ins')
       .select('id, check_in_time, check_out_time, skipped, job_day_locations!inner(job_id)')
@@ -83,32 +75,30 @@ async function getDashboardData(profileId: string) {
     }
   }
 
-  // Check for active multi-day location check-in if no legacy active check-in
-  let activeJob: { job_id: string; check_in_time: string; jobs: Record<string, unknown> } | null = activeCheckIn || null
-  if (!activeJob) {
-    const { data: activeLocationCi } = await supabase
-      .from('location_check_ins')
-      .select('*, job_day_locations!inner(job_id)')
-      .eq('ba_id', profileId)
-      .is('check_out_time', null)
-      .eq('skipped', false)
-      .limit(1)
+  // Check for active location check-in
+  let activeJob: { job_id: string; check_in_time: string; jobs: Record<string, unknown> } | null = null
+  const { data: activeLocationCi } = await supabase
+    .from('location_check_ins')
+    .select('*, job_day_locations!inner(job_id)')
+    .eq('ba_id', profileId)
+    .is('check_out_time', null)
+    .eq('skipped', false)
+    .limit(1)
+    .single()
+
+  if (activeLocationCi) {
+    const jobId = (activeLocationCi as { job_day_locations: { job_id: string } }).job_day_locations.job_id
+    const { data: job } = await supabase
+      .from('jobs')
+      .select('*')
+      .eq('id', jobId)
       .single()
 
-    if (activeLocationCi) {
-      const jobId = (activeLocationCi as { job_day_locations: { job_id: string } }).job_day_locations.job_id
-      const { data: job } = await supabase
-        .from('jobs')
-        .select('*')
-        .eq('id', jobId)
-        .single()
-
-      if (job) {
-        activeJob = {
-          job_id: jobId,
-          check_in_time: activeLocationCi.check_in_time,
-          jobs: job,
-        }
+    if (job) {
+      activeJob = {
+        job_id: jobId,
+        check_in_time: activeLocationCi.check_in_time,
+        jobs: job,
       }
     }
   }
@@ -412,9 +402,10 @@ export default async function DashboardPage() {
               <CardContent>
                 <div className="space-y-4">
                   {completedJobs.map((app) => (
-                    <div
+                    <Link
                       key={app.id}
-                      className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
+                      href={`/dashboard/jobs/${app.jobs.id}`}
+                      className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
                     >
                       <div>
                         <h4 className="font-medium text-gray-900">{app.jobs.title}</h4>
@@ -423,7 +414,7 @@ export default async function DashboardPage() {
                         </p>
                       </div>
                       <Badge variant="info">Completed</Badge>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               </CardContent>

@@ -198,7 +198,7 @@ async def assign_bas_to_job(
     job = (
         supabase.table("jobs")
         .select(
-            "slots, slots_filled, title, date, location, start_time, job_days(date, job_day_locations(location, start_time))"
+            "slots, slots_filled, title, job_days(date, job_day_locations(location, start_time))"
         )
         .eq("id", job_id)
         .single()
@@ -286,21 +286,29 @@ async def unassign_ba_from_job(
     if application.data["status"] != "approved":
         raise HTTPException(status_code=400, detail="BA is not currently assigned to this job")
 
-    # Check for existing check-in
-    checkin = (
-        supabase.table("check_ins")
+    # Check for existing check-in at any location in this job
+    loc_ids_result = (
+        supabase.table("job_day_locations")
         .select("id")
         .eq("job_id", job_id)
-        .eq("ba_id", ba_id)
-        .single()
         .execute()
     )
-
-    if checkin.data:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot unassign BA who has already checked in",
+    loc_ids = [r["id"] for r in (loc_ids_result.data or [])]
+    if loc_ids:
+        checkin = (
+            supabase.table("location_check_ins")
+            .select("id")
+            .eq("ba_id", ba_id)
+            .in_("job_day_location_id", loc_ids)
+            .limit(1)
+            .single()
+            .execute()
         )
+        if checkin.data:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot unassign BA who has already checked in",
+            )
 
     # Update application to withdrawn
     supabase.table("job_applications").update(
@@ -337,7 +345,7 @@ async def update_application_status(
     application = (
         supabase.table("job_applications")
         .select(
-            "id, status, job_id, ba_id, jobs(id, title, date, location, start_time, slots_filled, job_days(date, job_day_locations(location, start_time))), ba_profiles(id, name, user_id)"
+            "id, status, job_id, ba_id, jobs(id, title, slots_filled, job_days(date, job_day_locations(location, start_time))), ba_profiles(id, name, user_id)"
         )
         .eq("id", application_id)
         .single()
@@ -500,18 +508,6 @@ async def get_job_attendance(
 
     ba_ids = [b["ba_id"] for b in ba_list]
 
-    # Get legacy check-ins
-    legacy_check_ins = []
-    if ba_ids:
-        legacy_result = (
-            supabase.table("check_ins")
-            .select("*")
-            .eq("job_id", job_id)
-            .in_("ba_id", ba_ids)
-            .execute()
-        )
-        legacy_check_ins = legacy_result.data or []
-
     # Get location check-ins for all locations in this job
     location_ids = []
     for day in job.data.get("job_days", []):
@@ -541,28 +537,32 @@ async def get_job_attendance(
         )
         travel_logs = travel_result.data or []
 
-    # Build legacy attendance
-    legacy_attendance = []
+    # Build attendance from location check-ins
+    attendance = []
     for ba in ba_list:
-        checkin = next((ci for ci in legacy_check_ins if ci["ba_id"] == ba["ba_id"]), None)
-        legacy_attendance.append(
+        ba_check_ins = [ci for ci in location_check_ins if ci["ba_id"] == ba["ba_id"]]
+        has_checked_in = len(ba_check_ins) > 0
+        has_checked_out = any(ci.get("check_out_time") for ci in ba_check_ins)
+        first_check_in = min((ci["check_in_time"] for ci in ba_check_ins), default=None) if ba_check_ins else None
+        last_check_out = max((ci["check_out_time"] for ci in ba_check_ins if ci.get("check_out_time")), default=None) if ba_check_ins else None
+        attendance.append(
             {
                 **ba,
-                "checked_in": checkin is not None,
-                "check_in_time": checkin["check_in_time"] if checkin else None,
-                "checked_out": checkin.get("check_out_time") is not None if checkin else False,
-                "check_out_time": checkin.get("check_out_time") if checkin else None,
+                "checked_in": has_checked_in,
+                "check_in_time": first_check_in,
+                "checked_out": has_checked_out,
+                "check_out_time": last_check_out,
             }
         )
 
     return {
         "job": job.data,
-        "attendance": legacy_attendance,
+        "attendance": attendance,
         "location_check_ins": location_check_ins,
         "travel_logs": travel_logs,
         "total_assigned": len(ba_list),
-        "checked_in": sum(1 for a in legacy_attendance if a["checked_in"]),
-        "checked_out": sum(1 for a in legacy_attendance if a["checked_out"]),
+        "checked_in": sum(1 for a in attendance if a["checked_in"]),
+        "checked_out": sum(1 for a in attendance if a["checked_out"]),
     }
 
 
@@ -619,14 +619,10 @@ async def get_jobs_report(
     result = supabase.table("jobs").select("*, job_days(date)").execute()
     all_jobs = result.data or []
 
-    # Filter by date range using job_days or legacy date
+    # Filter by date range using job_days
     def get_job_dates(j: dict) -> list[str]:
         days = j.get("job_days") or []
-        if days:
-            return [d["date"] for d in days if d.get("date")]
-        if j.get("date"):
-            return [j["date"]]
-        return []
+        return [d["date"] for d in days if d.get("date")]
 
     jobs = []
     for j in all_jobs:
@@ -689,11 +685,12 @@ async def get_bas_report(
 
     ba_stats = []
     for ba in bas.data or []:
-        # Get completed check-ins
+        # Get completed location check-ins
         checkins = (
-            supabase.table("check_ins")
+            supabase.table("location_check_ins")
             .select("check_in_time, check_out_time")
             .eq("ba_id", ba["id"])
+            .eq("skipped", False)
             .not_.is_("check_out_time", "null")
             .execute()
         )
