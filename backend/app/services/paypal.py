@@ -134,7 +134,7 @@ def get_login_oauth_url(*, state: str, redirect_uri: str, scope: str = "openid e
     """
     if not settings.paypal_client_id:
         raise RuntimeError("PAYPAL_CLIENT_ID not configured")
-    from urllib.parse import urlencode
+    from urllib.parse import quote, urlencode
 
     base = (
         "https://www.sandbox.paypal.com/connect"
@@ -149,7 +149,9 @@ def get_login_oauth_url(*, state: str, redirect_uri: str, scope: str = "openid e
         "redirect_uri": redirect_uri,
         "state": state,
     }
-    return f"{base}?{urlencode(params)}"
+    # Use %20 (not +) for spaces — PayPal's /connect endpoint expects
+    # percent-encoded spaces in the scope value.
+    return f"{base}?{urlencode(params, quote_via=quote)}"
 
 
 def exchange_login_code(code: str, *, redirect_uri: str) -> dict[str, Any]:
