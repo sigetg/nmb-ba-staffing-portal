@@ -57,33 +57,56 @@ async def paypal_webhook(request: Request):
 
     supabase = get_supabase_client()
 
-    # Match by paypal_item_id first; fall back to id (sender_item_id is our payments.id).
-    query = supabase.table("payments").select("id, status, ba_id, job_id")
-    if payout_item_id:
-        query = query.eq("paypal_item_id", payout_item_id)
-    else:
-        query = query.eq("id", sender_item_id)
-    res = query.execute()
-    rows = res.data or []
+    # sender_item_id is OUR payments.id (we set it when creating the batch),
+    # always echoed back by PayPal in every event. paypal_item_id is PayPal's
+    # own id which we may not have stored yet (POST /payouts doesn't return
+    # per-item ids). Try both, prefer the more reliable sender_item_id match.
+    rows: list[dict] = []
+    if sender_item_id:
+        res = (
+            supabase.table("payments")
+            .select("id, status, ba_id, job_id, paypal_item_id")
+            .eq("id", sender_item_id)
+            .execute()
+        )
+        rows = res.data or []
+    if not rows and payout_item_id:
+        res = (
+            supabase.table("payments")
+            .select("id, status, ba_id, job_id, paypal_item_id")
+            .eq("paypal_item_id", payout_item_id)
+            .execute()
+        )
+        rows = res.data or []
     if not rows:
-        logger.warning("PayPal webhook for unknown payout_item_id=%s sender_item_id=%s",
-                       payout_item_id, sender_item_id)
+        logger.warning(
+            "PayPal webhook for unknown payout_item_id=%s sender_item_id=%s",
+            payout_item_id, sender_item_id,
+        )
         return {"received": True, "matched": False}
 
     payment_id = rows[0]["id"]
     update: dict = {}
+    # Backfill paypal_item_id on first matching event so future events match faster.
+    if payout_item_id and not rows[0].get("paypal_item_id"):
+        update["paypal_item_id"] = payout_item_id
+
     if event_type in _SUCCESS_EVENTS:
-        update = {
-            "status": "completed",
-            "processed_at": datetime.utcnow().isoformat(),
-            "tax_year": datetime.utcnow().year,
-        }
+        update.update(
+            {
+                "status": "completed",
+                "processed_at": datetime.utcnow().isoformat(),
+                "tax_year": datetime.utcnow().year,
+            }
+        )
     elif event_type in _FAILED_EVENTS:
-        update = {"status": "failed"}
+        update["status"] = "failed"
     elif event_type == "PAYMENT.PAYOUTS-ITEM.CANCELED":
-        update = {"status": "cancelled"}
+        update["status"] = "cancelled"
     else:
-        # Other events (e.g. PAYOUTSBATCH.SUCCESS) — ignore
+        # Other events (e.g. PAYOUTSBATCH.SUCCESS) — ignore but persist any backfill.
+        if update:
+            supabase.table("payments").update(update).eq("id", payment_id).execute()
         return {"received": True, "matched": True, "no_op": True, "event_type": event_type}
 
     supabase.table("payments").update(update).eq("id", payment_id).execute()
