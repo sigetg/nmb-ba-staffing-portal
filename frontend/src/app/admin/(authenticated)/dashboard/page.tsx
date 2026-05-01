@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle, Badge } from '@/components/ui'
-import { Users, Hourglass, UserCheck, Briefcase, Activity, ClipboardList, Plus } from 'lucide-react'
+import { Users, Hourglass, UserCheck, Briefcase, Activity, ClipboardList, Plus, DollarSign } from 'lucide-react'
 import { formatJobStatus, getJobStatusBadgeVariant, getMultiDayDisplayStatus, getJobDateDisplay } from '@/lib/utils'
 import type { JobWithDays } from '@/types'
 
@@ -68,6 +68,60 @@ async function getAdminDashboardData() {
     .filter(job => job.displayStatus === 'completed')
     .slice(0, 5)
 
+  // --- Payout aggregations ---
+  const completedJobIds = allJobs
+    .map(j => ({ id: j.id, displayStatus: getMultiDayDisplayStatus(j) }))
+    .filter(j => j.displayStatus === 'completed')
+    .map(j => j.id)
+
+  let unpaidByJob: Record<string, number> = {}
+  let pendingTotal = 0
+
+  if (completedJobIds.length > 0) {
+    const [{ data: approvedApps }, { data: jobPmts }] = await Promise.all([
+      supabase
+        .from('job_applications')
+        .select('job_id, ba_id')
+        .in('job_id', completedJobIds)
+        .eq('status', 'approved'),
+      supabase
+        .from('payments')
+        .select('job_id, ba_id, status')
+        .in('job_id', completedJobIds),
+    ])
+    const completedPairs = new Set(
+      (jobPmts || []).filter(p => p.status === 'completed').map(p => `${p.job_id}|${p.ba_id}`),
+    )
+    const acc: Record<string, number> = {}
+    for (const app of approvedApps || []) {
+      if (!completedPairs.has(`${app.job_id}|${app.ba_id}`)) {
+        acc[app.job_id] = (acc[app.job_id] || 0) + 1
+      }
+    }
+    unpaidByJob = acc
+  }
+
+  const { data: pendingPayments } = await supabase
+    .from('payments')
+    .select('amount')
+    .in('status', ['queued', 'processing'])
+
+  pendingTotal = (pendingPayments || []).reduce(
+    (sum: number, p: { amount: number | string }) => sum + Number(p.amount || 0),
+    0,
+  )
+
+  // Jobs awaiting payout (full list, sorted by date desc)
+  const awaitingPayout = allJobs
+    .map(job => ({ ...job, displayStatus: getMultiDayDisplayStatus(job) }))
+    .filter(job => unpaidByJob[job.id])
+    .sort((a, b) => {
+      const aDate = [...(a.job_days || [])].sort((x, y) => x.date.localeCompare(y.date)).pop()?.date || ''
+      const bDate = [...(b.job_days || [])].sort((x, y) => x.date.localeCompare(y.date)).pop()?.date || ''
+      return bDate.localeCompare(aDate)
+    })
+    .slice(0, 5)
+
   return {
     stats: {
       totalBAs: totalBAs || 0,
@@ -76,16 +130,28 @@ async function getAdminDashboardData() {
       totalJobs: totalJobs || 0,
       activeJobs: activeJobs || 0,
       pendingApplications: pendingApplications || 0,
+      pendingPayoutsTotal: pendingTotal,
+      jobsAwaitingPayoutCount: Object.keys(unpaidByJob).length,
     },
     pendingBAsList: pendingBAsList || [],
     activeJobsList: activeJobs2,
     completedJobsList: completedJobs,
     recentApplications: recentApplications || [],
+    awaitingPayout,
+    unpaidByJob,
   }
 }
 
 export default async function AdminDashboardPage() {
-  const { stats, pendingBAsList, activeJobsList, completedJobsList, recentApplications } = await getAdminDashboardData()
+  const {
+    stats,
+    pendingBAsList,
+    activeJobsList,
+    completedJobsList,
+    recentApplications,
+    awaitingPayout,
+    unpaidByJob,
+  } = await getAdminDashboardData()
 
   const sortedActiveJobs = activeJobsList
 
@@ -179,6 +245,27 @@ export default async function AdminDashboardPage() {
             </div>
           </CardContent>
         </Card>
+
+        <Link href="/admin/payouts">
+          <Card className="hover:bg-gray-50 transition-colors">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <DollarSign className="w-7 h-7 text-primary-400" />
+                <div>
+                  <p className="text-sm text-primary-400">Pending Payouts</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    ${stats.pendingPayoutsTotal.toFixed(2)}
+                  </p>
+                  {stats.jobsAwaitingPayoutCount > 0 && (
+                    <p className="text-xs text-yellow-700 mt-0.5">
+                      {stats.jobsAwaitingPayoutCount} job{stats.jobsAwaitingPayoutCount > 1 ? 's' : ''} awaiting payout
+                    </p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* 2x2 Grid */}
@@ -224,19 +311,27 @@ export default async function AdminDashboardPage() {
               <div className="text-center py-8 text-primary-400">No completed jobs yet</div>
             ) : (
               <div className="space-y-3">
-                {completedJobsList.map((job) => (
-                  <Link key={job.id} href={`/admin/jobs/${job.id}`} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                    <div>
-                      <p className="font-medium text-gray-900">{job.title}</p>
-                      <p className="text-sm text-primary-400">
-                        {job.brand}
-                        {(job as typeof job & { job_types?: { name: string } | null }).job_types?.name && ` - ${(job as typeof job & { job_types?: { name: string } | null }).job_types!.name}`}
-                      </p>
-                      <p className="text-sm text-primary-400">{getJobDateDisplay(job)} - {job.slots_filled} BAs</p>
-                    </div>
-                    <Badge variant="default">Completed</Badge>
-                  </Link>
-                ))}
+                {completedJobsList.map((job) => {
+                  const unpaid = unpaidByJob[job.id] || 0
+                  return (
+                    <Link key={job.id} href={`/admin/jobs/${job.id}`} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                      <div>
+                        <p className="font-medium text-gray-900">{job.title}</p>
+                        <p className="text-sm text-primary-400">
+                          {job.brand}
+                          {(job as typeof job & { job_types?: { name: string } | null }).job_types?.name && ` - ${(job as typeof job & { job_types?: { name: string } | null }).job_types!.name}`}
+                        </p>
+                        <p className="text-sm text-primary-400">{getJobDateDisplay(job)} - {job.slots_filled} BAs</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <Badge variant="default">Completed</Badge>
+                        {unpaid > 0 && (
+                          <Badge variant="warning">⚠ {unpaid} unpaid</Badge>
+                        )}
+                      </div>
+                    </Link>
+                  )
+                })}
               </div>
             )}
           </CardContent>
@@ -300,6 +395,39 @@ export default async function AdminDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Jobs Awaiting Payout */}
+      {awaitingPayout.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Jobs Awaiting Payout</CardTitle>
+              <Link href="/admin/payouts" className="text-sm text-primary-400 hover:text-primary-500">
+                Go to payouts →
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {awaitingPayout.map(job => (
+                <Link
+                  key={job.id}
+                  href={`/admin/jobs/${job.id}`}
+                  className="flex items-center justify-between p-3 bg-yellow-50 border border-yellow-200 rounded-lg hover:bg-yellow-100 transition-colors"
+                >
+                  <div>
+                    <p className="font-medium text-gray-900">{job.title}</p>
+                    <p className="text-sm text-primary-400">
+                      {job.brand} - {getJobDateDisplay(job)}
+                    </p>
+                  </div>
+                  <Badge variant="warning">⚠ {unpaidByJob[job.id]} unpaid</Badge>
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

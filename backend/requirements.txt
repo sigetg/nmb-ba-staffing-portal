@@ -26,6 +26,12 @@ twilio==8.13.0
 dropbox>=12.0.0,<13.0
 # httpx pulled in by supabase
 
+# Encryption (W-9 TIN, ACH details)
+cryptography>=42.0.0,<46.0
+
+# PDF generation (W-9, 1099-NEC)
+reportlab>=4.0.0,<5.0
+
 # Development
 ruff==0.2.1
 mypy==1.8.0

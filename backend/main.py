@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, auth, bas, files, health, job_types, jobs, reports
+from app.api import admin, auth, bas, files, health, job_types, jobs, profile, qbo, reports, webhooks
 from app.core.config import settings
 
 app = FastAPI(
@@ -17,10 +17,15 @@ cors_origins = list(settings.cors_origins_list)
 if settings.frontend_url and settings.frontend_url not in cors_origins:
     cors_origins.append(settings.frontend_url)
 
-# CORS middleware
+# CORS middleware. Explicit allowlist for prod; permissive regex for any localhost
+# variant (localhost, 127.0.0.1, [::1], 0.0.0.0, LAN IP) during development.
+_localhost_regex = (
+    r"^https?://(?:localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0|\d+\.\d+\.\d+\.\d+):\d+$"
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    allow_origin_regex=_localhost_regex if settings.environment != "production" else None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,7 +39,10 @@ app.include_router(bas.router, prefix="/api/bas", tags=["Brand Ambassadors"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(files.router, prefix="/api/files", tags=["Files"])
 app.include_router(job_types.router, prefix="/api/job-types", tags=["Job Types"])
+app.include_router(profile.router, prefix="/api/profile", tags=["Profile (W-9 + Payout)"])
+app.include_router(qbo.router, prefix="/api/admin/qbo", tags=["QuickBooks"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
+app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
 
 
 @app.get("/")

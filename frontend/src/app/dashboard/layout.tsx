@@ -33,6 +33,10 @@ export default async function BADashboardLayout({
       redirect('/admin/dashboard')
     }
 
+    const onboardingComplete = !!(
+      profile.w9_submitted_at && profile.dl_uploaded_at && profile.payout_info_submitted_at
+    )
+
     return (
       <DashboardLayout
         user={{
@@ -40,6 +44,7 @@ export default async function BADashboardLayout({
           email: authResult.user.email,
           role: 'ba',
           baStatus: profile.status as 'pending' | 'approved' | 'rejected' | 'suspended',
+          onboardingComplete,
         }}
         impersonation={{ baName: profile.name, baId: profile.id }}
       >
@@ -67,6 +72,10 @@ export default async function BADashboardLayout({
     redirect('/auth/setup')
   }
 
+  const onboardingComplete = !!(
+    profile.w9_submitted_at && profile.dl_uploaded_at && profile.payout_info_submitted_at
+  )
+
   return (
     <DashboardLayout
       user={{
@@ -74,6 +83,7 @@ export default async function BADashboardLayout({
         email: user.email,
         role: 'ba',
         baStatus: profile.status as 'pending' | 'approved' | 'rejected' | 'suspended',
+        onboardingComplete,
       }}
     >
       {children}

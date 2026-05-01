@@ -1,10 +1,12 @@
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.core.auth import CurrentUser, get_current_admin
 from app.core.supabase import get_supabase_client
+from app.services import payouts as payouts_svc
 from app.services.email import (
     get_ba_email,
     get_job_display_info,
@@ -38,6 +40,26 @@ class PaymentTrigger(BaseModel):
     job_id: str
     ba_id: str
     amount: float
+    notes: str | None = None
+
+
+class PaymentCreate(BaseModel):
+    job_id: str
+    ba_id: str
+    base_amount: float
+    bonus_amount: float = 0
+    reimbursement_amount: float = 0
+    hours_worked: float | None = None
+    notes: str | None = None
+
+
+class PaypalSendRequest(BaseModel):
+    payment_ids: list[str]
+
+
+class PaymentStatusUpdate(BaseModel):
+    status: str | None = None
+    payment_reference: str | None = None
     notes: str | None = None
 
 
@@ -566,23 +588,297 @@ async def get_job_attendance(
     }
 
 
-@router.post("/payments/trigger")
-async def trigger_payment(
-    payment: PaymentTrigger,
+@router.get("/jobs/{job_id}/payout-summary")
+async def get_job_payout_summary(
+    job_id: str,
     current_user: CurrentUser = Depends(get_current_admin),
 ):
-    """Trigger a payment to a BA via Stripe Connect."""
-    # TODO: Implement with Stripe Connect
-    raise HTTPException(
-        status_code=501,
-        detail="Stripe Connect integration not yet implemented",
+    """Per-BA payout summary for a job: hours worked + suggested base amount + existing payment status.
+
+    Used by the Payouts card on the admin job detail page.
+    """
+    supabase = get_supabase_client()
+
+    job = (
+        supabase.table("jobs")
+        .select("id, title, pay_rate")
+        .eq("id", job_id)
+        .single()
+        .execute()
     )
+    if not job.data:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    pay_rate = Decimal(str(job.data.get("pay_rate") or 0))
+
+    apps = (
+        supabase.table("job_applications")
+        .select(
+            "ba_id, ba_profiles(id, name, payout_method, payout_paypal_email, "
+            "w9_submitted_at, dl_uploaded_at, payout_info_submitted_at)"
+        )
+        .eq("job_id", job_id)
+        .eq("status", "approved")
+        .execute()
+    )
+
+    existing_pmts = (
+        supabase.table("payments")
+        .select(
+            "id, ba_id, amount, base_amount, bonus_amount, reimbursement_amount, "
+            "fee_amount, hours_worked, status, payment_method, payment_reference, "
+            "batch_id, paypal_item_id, processed_at, created_at"
+        )
+        .eq("job_id", job_id)
+        .execute()
+    )
+    pmts_by_ba: dict[str, list[dict]] = {}
+    for p in existing_pmts.data or []:
+        pmts_by_ba.setdefault(p["ba_id"], []).append(p)
+
+    rows = []
+    for app in apps.data or []:
+        ba_id = app["ba_id"]
+        prof = app.get("ba_profiles") or {}
+        hours = payouts_svc.compute_hours(supabase, job_id=job_id, ba_id=ba_id)
+        base_amount = (pay_rate * hours).quantize(Decimal("0.01"))
+        ba_payments = pmts_by_ba.get(ba_id, [])
+        rows.append(
+            {
+                "ba_id": ba_id,
+                "ba_name": prof.get("name"),
+                "payout_method": prof.get("payout_method"),
+                "payout_paypal_email": prof.get("payout_paypal_email"),
+                "onboarding_complete": bool(
+                    prof.get("w9_submitted_at")
+                    and prof.get("dl_uploaded_at")
+                    and prof.get("payout_info_submitted_at")
+                ),
+                "hours_worked": str(hours),
+                "suggested_base_amount": str(base_amount),
+                "payments": ba_payments,
+            }
+        )
+
+    return {
+        "job_id": job_id,
+        "job_title": job.data.get("title"),
+        "pay_rate": str(pay_rate),
+        "rows": rows,
+    }
+
+
+@router.post("/payments")
+async def create_payment(
+    payload: PaymentCreate,
+    current_user: CurrentUser = Depends(get_current_admin),
+):
+    """Create a payment record in 'queued' status for a (job, BA).
+
+    The actual disbursement happens later via either:
+      - POST /payments/ach-batch/export  (for ACH method)
+      - POST /payments/paypal/send       (for PayPal method)
+    """
+    supabase = get_supabase_client()
+
+    # Refuse duplicates: one 'completed' payment per (job, ba) is the cap.
+    existing = (
+        supabase.table("payments")
+        .select("id, status")
+        .eq("job_id", payload.job_id)
+        .eq("ba_id", payload.ba_id)
+        .in_("status", ["queued", "processing", "completed"])
+        .execute()
+    )
+    if existing.data:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Payment for this BA on this job already exists "
+                f"(status: {existing.data[0]['status']})"
+            ),
+        )
+
+    base = Decimal(str(payload.base_amount))
+    bonus = Decimal(str(payload.bonus_amount))
+    reimb = Decimal(str(payload.reimbursement_amount))
+    total = (base + bonus + reimb).quantize(Decimal("0.01"))
+
+    # Look up BA's chosen payout method to pre-tag the row.
+    prof = (
+        supabase.table("ba_profiles")
+        .select("payout_method")
+        .eq("id", payload.ba_id)
+        .single()
+        .execute()
+    )
+    method = (prof.data or {}).get("payout_method")
+    payment_method = "ach_batch" if method == "ach" else "paypal" if method == "paypal" else None
+
+    insert = {
+        "job_id": payload.job_id,
+        "ba_id": payload.ba_id,
+        "amount": float(total),
+        "base_amount": float(base),
+        "bonus_amount": float(bonus),
+        "reimbursement_amount": float(reimb),
+        "hours_worked": float(payload.hours_worked) if payload.hours_worked is not None else None,
+        "status": "queued",
+        "payment_method": payment_method,
+        "notes": payload.notes,
+        "paid_by": current_user.id,
+    }
+
+    res = supabase.table("payments").insert(insert).execute()
+    return {"payment": (res.data or [None])[0]}
+
+
+@router.patch("/payments/{payment_id}")
+async def update_payment(
+    payment_id: str,
+    payload: PaymentStatusUpdate,
+    current_user: CurrentUser = Depends(get_current_admin),
+):
+    """Update an existing payment row (e.g. retry → queued, mark cancelled, etc.)."""
+    supabase = get_supabase_client()
+    update: dict = {}
+    if payload.status is not None:
+        if payload.status not in {
+            "queued",
+            "pending",
+            "processing",
+            "completed",
+            "failed",
+            "cancelled",
+        }:
+            raise HTTPException(status_code=400, detail="Invalid status")
+        update["status"] = payload.status
+    if payload.payment_reference is not None:
+        update["payment_reference"] = payload.payment_reference
+    if payload.notes is not None:
+        update["notes"] = payload.notes
+    if not update:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    res = supabase.table("payments").update(update).eq("id", payment_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    return {"payment": res.data[0]}
+
+
+@router.get("/payments/queue")
+async def get_payments_queue(
+    current_user: CurrentUser = Depends(get_current_admin),
+):
+    """Active queue + pending payments grouped by method (for the admin Payouts page)."""
+    supabase = get_supabase_client()
+    res = (
+        supabase.table("payments")
+        .select("*, ba_profiles(id, name), jobs(id, title)")
+        .in_("status", ["queued", "processing"])
+        .order("created_at", desc=False)
+        .execute()
+    )
+    rows = res.data or []
+    ach = [r for r in rows if (r.get("payment_method") or "") == "ach_batch"]
+    paypal_rows = [r for r in rows if (r.get("payment_method") or "") == "paypal"]
+    return {"ach": ach, "paypal": paypal_rows, "total": len(rows)}
+
+
+@router.post("/payments/paypal/send")
+async def send_paypal_payouts_endpoint(
+    payload: PaypalSendRequest,
+    current_user: CurrentUser = Depends(get_current_admin),
+):
+    """Trigger an instant PayPal Payouts batch for the given payment IDs.
+
+    Each payment row is transitioned to 'processing' with the paypal_item_id
+    captured. The webhook handler later moves them to 'completed' / 'failed'.
+    """
+    supabase = get_supabase_client()
+    try:
+        result = payouts_svc.send_paypal_payouts(
+            supabase, payment_ids=payload.payment_ids, paid_by=current_user.id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"PayPal API error: {exc}") from exc
+    return result
+
+
+@router.get("/payouts/pending-jobs")
+async def get_payouts_pending_jobs(
+    current_user: CurrentUser = Depends(get_current_admin),
+):
+    """List completed jobs that still have at least one approved BA without a 'completed' payment.
+
+    Used by the admin dashboard to surface 'Jobs Awaiting Payout'.
+    """
+    supabase = get_supabase_client()
+    today = datetime.utcnow().date().isoformat()
+
+    jobs_res = (
+        supabase.table("jobs")
+        .select("id, title, brand, pay_rate, status, job_days(date)")
+        .eq("status", "published")
+        .execute()
+    )
+    jobs = jobs_res.data or []
+
+    completed_job_ids = []
+    for j in jobs:
+        days = j.get("job_days") or []
+        if not days:
+            continue
+        max_date = max(d["date"] for d in days if d.get("date"))
+        if max_date < today:
+            completed_job_ids.append(j["id"])
+
+    if not completed_job_ids:
+        return {"jobs": []}
+
+    apps_res = (
+        supabase.table("job_applications")
+        .select("job_id, ba_id")
+        .in_("job_id", completed_job_ids)
+        .eq("status", "approved")
+        .execute()
+    )
+    pmts_res = (
+        supabase.table("payments")
+        .select("job_id, ba_id, status")
+        .in_("job_id", completed_job_ids)
+        .execute()
+    )
+    completed_pairs: set[tuple[str, str]] = {
+        (p["job_id"], p["ba_id"])
+        for p in (pmts_res.data or [])
+        if p.get("status") == "completed"
+    }
+
+    unpaid_by_job: dict[str, int] = {}
+    for app in apps_res.data or []:
+        if (app["job_id"], app["ba_id"]) not in completed_pairs:
+            unpaid_by_job[app["job_id"]] = unpaid_by_job.get(app["job_id"], 0) + 1
+
+    out = []
+    for j in jobs:
+        if j["id"] not in unpaid_by_job:
+            continue
+        out.append({**j, "unpaid_count": unpaid_by_job[j["id"]]})
+    out.sort(
+        key=lambda j: max((d["date"] for d in (j.get("job_days") or []) if d.get("date")), default=""),
+        reverse=True,
+    )
+    return {"jobs": out}
 
 
 @router.get("/payments")
 async def list_payments(
     job_id: str | None = None,
     ba_id: str | None = None,
+    status: str | None = None,
     limit: int = Query(20, le=100),
     offset: int = 0,
     current_user: CurrentUser = Depends(get_current_admin),
@@ -596,6 +892,8 @@ async def list_payments(
         query = query.eq("job_id", job_id)
     if ba_id:
         query = query.eq("ba_id", ba_id)
+    if status:
+        query = query.eq("status", status)
 
     result = query.range(offset, offset + limit - 1).order("created_at", desc=True).execute()
 

@@ -32,6 +32,85 @@ export interface BAProfile {
   created_at: string
   updated_at?: string
   email?: string
+  // W-9 + payout onboarding (set during welcome stepper)
+  w9_submitted_at?: string | null
+  w9_legal_name?: string | null
+  w9_tin_last4?: string | null
+  dl_front_url?: string | null
+  dl_back_url?: string | null
+  dl_uploaded_at?: string | null
+  payout_method?: 'paypal' | null
+  payout_info_submitted_at?: string | null
+  qbo_vendor_id?: string | null
+}
+
+// Tax / payout types
+export type EntityType =
+  | 'individual'
+  | 'sole_proprietor'
+  | 'llc_single'
+  | 'llc_partnership'
+  | 'llc_corp'
+  | 'c_corp'
+  | 's_corp'
+  | 'partnership'
+  | 'other'
+
+export type TinType = 'ssn' | 'ein'
+export type PayoutMethod = 'paypal'
+
+export interface W9Status {
+  submitted: boolean
+  submitted_at: string | null
+  legal_name: string | null
+  entity_type: EntityType | null
+  tin_last4: string | null
+  tin_type: TinType | null
+  address_line1: string | null
+  address_line2: string | null
+  city: string | null
+  state: string | null
+  zip_code: string | null
+  electronic_consent: boolean
+}
+
+export interface PayoutMethodStatus {
+  submitted: boolean
+  submitted_at: string | null
+  method: PayoutMethod | null
+  paypal_email: string | null
+}
+
+export interface OnboardingStatus {
+  w9_submitted: boolean
+  dl_uploaded: boolean
+  payout_submitted: boolean
+  onboarding_complete: boolean
+}
+
+export type PaymentStatus = 'queued' | 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
+export type PaymentMethodKey = 'paypal'
+
+export interface Payment {
+  id: string
+  job_id: string
+  ba_id: string
+  amount: number
+  base_amount: number | null
+  bonus_amount: number
+  reimbursement_amount: number
+  fee_amount: number
+  hours_worked: number | null
+  status: PaymentStatus
+  payment_method: PaymentMethodKey | null
+  payment_reference: string | null
+  paypal_item_id: string | null
+  batch_id: string | null
+  notes: string | null
+  paid_by: string | null
+  tax_year: number | null
+  created_at: string
+  processed_at: string | null
 }
 
 export interface BAPhoto {
