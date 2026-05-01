@@ -17,14 +17,17 @@ router = APIRouter()
 
 
 _SUCCESS_EVENTS = {"PAYMENT.PAYOUTS-ITEM.SUCCEEDED"}
+# Permanent failures — funds returned to platform / never delivered.
 _FAILED_EVENTS = {
     "PAYMENT.PAYOUTS-ITEM.FAILED",
     "PAYMENT.PAYOUTS-ITEM.RETURNED",
     "PAYMENT.PAYOUTS-ITEM.DENIED",
     "PAYMENT.PAYOUTS-ITEM.BLOCKED",
     "PAYMENT.PAYOUTS-ITEM.REFUNDED",
-    "PAYMENT.PAYOUTS-ITEM.UNCLAIMED",
 }
+# UNCLAIMED is NOT a failure — funds are reserved by PayPal pending recipient
+# acceptance; can still resolve to SUCCEEDED if claimed, or to REFUNDED after
+# ~30 days unclaimed. We keep these rows in `processing`.
 
 
 @router.post("/paypal")
