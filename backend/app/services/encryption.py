@@ -6,6 +6,8 @@ Ciphertext is stored as URL-safe base64 in TEXT columns; plaintext never leaves 
 
 import base64
 import hashlib
+import hmac
+import secrets
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -51,3 +53,40 @@ def last4(value: str) -> str:
     """Return the last 4 chars of a digit-string for display ('123-45-6789' -> '6789')."""
     digits = "".join(c for c in value if c.isdigit())
     return digits[-4:] if len(digits) >= 4 else digits
+
+
+# --- OAuth state (stateless, HMAC-signed) ---
+
+
+def sign_oauth_state(user_id: str, *, purpose: str = "oauth") -> str:
+    """Pack (user_id, nonce) into an HMAC-signed state string.
+
+    Avoids needing cookies (which fail cross-site) by carrying everything in
+    the OAuth state param itself. HMAC ensures it can't be forged.
+    """
+    nonce = secrets.token_urlsafe(12)
+    payload = f"{purpose}:{user_id}:{nonce}"
+    sig = hmac.new(
+        settings.secret_key.encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"{payload}:{sig}"
+
+
+def verify_oauth_state(state: str, *, purpose: str = "oauth") -> str:
+    """Verify HMAC-signed state and return the user_id. Raises on tamper / wrong purpose."""
+    parts = state.split(":")
+    if len(parts) != 4:
+        raise ValueError("Malformed OAuth state")
+    got_purpose, user_id, nonce, sig = parts
+    if got_purpose != purpose:
+        raise ValueError("OAuth state purpose mismatch")
+    expected_sig = hmac.new(
+        settings.secret_key.encode("utf-8"),
+        f"{got_purpose}:{user_id}:{nonce}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(sig, expected_sig):
+        raise ValueError("OAuth state signature invalid")
+    return user_id

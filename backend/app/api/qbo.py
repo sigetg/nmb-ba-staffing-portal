@@ -1,9 +1,8 @@
 """QuickBooks Online admin endpoints: OAuth, settings, sync queue, backfill."""
 
 import logging
-import secrets
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
@@ -11,6 +10,7 @@ from app.core.auth import CurrentUser, get_current_admin
 from app.core.config import settings
 from app.core.supabase import get_supabase_client
 from app.services import qbo, qbo_sync
+from app.services.encryption import sign_oauth_state, verify_oauth_state
 
 logger = logging.getLogger(__name__)
 
@@ -35,22 +35,10 @@ class QboSettings(BaseModel):
 async def qbo_connect(
     current_user: CurrentUser = Depends(get_current_admin),
 ):
-    """Build the Intuit OAuth consent URL with CSRF state cookie."""
-    state = secrets.token_urlsafe(24)
+    """Build the Intuit OAuth consent URL with HMAC-signed state (no cookies)."""
+    state = sign_oauth_state(current_user.id, purpose="qbo")
     url = qbo.get_consent_url(state=state, redirect_uri=_redirect_uri())
-    response = Response(
-        content='{"url":"' + url + '"}',
-        media_type="application/json",
-    )
-    response.set_cookie(
-        key="qbo_oauth_state",
-        value=f"{current_user.id}:{state}",
-        max_age=600,
-        httponly=True,
-        samesite="lax",
-        secure=settings.environment == "production",
-    )
-    return response
+    return {"url": url}
 
 
 @router.get("/callback")
@@ -58,13 +46,11 @@ async def qbo_callback(
     code: str,
     state: str,
     realmId: str,  # noqa: N803 — Intuit query param name
-    qbo_oauth_state: str | None = Cookie(None),
 ):
-    if not qbo_oauth_state or ":" not in qbo_oauth_state:
-        raise HTTPException(status_code=400, detail="Missing or invalid OAuth state cookie")
-    user_id, expected_state = qbo_oauth_state.split(":", 1)
-    if not secrets.compare_digest(expected_state, state):
-        raise HTTPException(status_code=400, detail="OAuth state mismatch")
+    try:
+        user_id = verify_oauth_state(state, purpose="qbo")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid OAuth state: {exc}") from exc
 
     try:
         tokens = qbo.exchange_code_for_tokens(code, _redirect_uri())
@@ -83,9 +69,7 @@ async def qbo_callback(
     )
 
     target = f"{settings.frontend_url.rstrip('/')}/admin/integrations/quickbooks?qbo=connected"
-    redirect = RedirectResponse(url=target, status_code=302)
-    redirect.delete_cookie("qbo_oauth_state")
-    return redirect
+    return RedirectResponse(url=target, status_code=302)
 
 
 @router.post("/disconnect")
