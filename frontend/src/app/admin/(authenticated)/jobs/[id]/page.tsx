@@ -6,6 +6,7 @@ import { ChevronLeft, Calendar, Clock, MapPin, FileText, Pencil, FileBarChart } 
 import type { Job, JobApplication, JobDay, JobDayLocation, LocationCheckIn, JobType, JobTypeKpi, JobTypeQuestion, JobTypeQuestionOption, CheckoutResponse, CheckoutResponseValue } from '@/types'
 import { ExportCSVButton } from '@/components/ui/export-csv-button'
 import { JobActions } from '@/components/admin/job-actions'
+import { PayoutsCard } from '@/components/admin/payouts-card'
 import { formatJobStatus, getMultiDayDisplayStatus, getJobStatusBadgeVariant, getTimezoneAbbr, parseLocalDate } from '@/lib/utils'
 
 interface ApplicationWithBA extends JobApplication {
@@ -622,6 +623,9 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
           )}
         </CardContent>
       </Card>
+
+      {/* Payouts Card */}
+      <PayoutsCard jobId={id} />
     </div>
   )
 }

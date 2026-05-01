@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
+import { requireOnboardedBA } from '@/lib/supabase/onboarding-guard'
 import Link from 'next/link'
 import { Card, CardContent, Badge } from '@/components/ui'
 import { Calendar, Clock, MapPin, CheckCircle2, XCircle, ChevronRight } from 'lucide-react'
@@ -101,6 +102,9 @@ async function getMyJobs(userId: string, impersonatedBAId?: string) {
 }
 
 export default async function MyJobsPage() {
+  // Gate: must be approved and have W-9 + payout method on file.
+  await requireOnboardedBA()
+
   const supabase = await createClient()
   const {
     data: { user },

@@ -7,6 +7,7 @@ import { Button, Input, Card, CardContent, CardHeader, CardTitle, Alert, Badge, 
 import { ImagePlus, FileText } from 'lucide-react'
 import type { BAProfile, BAPhoto } from '@/types'
 import { getImpersonatedBAId } from '@/lib/impersonation'
+import { TaxDocumentsCard } from '@/components/dashboard/tax-documents-card'
 
 const daysOfWeek = [
   'Monday',
@@ -222,6 +223,9 @@ export default function ProfilePage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Tax Documents */}
+      <TaxDocumentsCard />
 
       {/* Profile Details */}
       <Card>

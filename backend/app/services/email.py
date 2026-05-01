@@ -158,16 +158,52 @@ def send_ba_approved_email(to_email: str, name: str | None, notes: str | None = 
     body = f"""
     <h2 style="color: #1a1a1a; margin-top: 0;">Congratulations, {first}!</h2>
     <p style="color: #4a4a4a; line-height: 1.6;">
-        Your Brand Ambassador profile has been approved. You can now browse
-        and apply for available jobs through the NMB Media Staffing Portal.
+        Your Brand Ambassador profile has been approved.
+    </p>
+    <p style="color: #4a4a4a; line-height: 1.6;">
+        <strong>One more step</strong> before you can apply for jobs: complete your tax info (W-9)
+        and pick how you'd like to be paid. Takes about 2 minutes.
     </p>
     {_notes_block(notes)}
-    {_cta_button("Go to Dashboard", "/dashboard")}
+    {_cta_button("Complete Onboarding", "/dashboard/welcome")}
     <p style="color: #4a4a4a; line-height: 1.6;">
         Welcome to the team!
     </p>
     """
     return _send_email(to_email, "Welcome to NMB Media - You're Approved!", body)
+
+
+def send_payment_sent_email(
+    to_email: str,
+    name: str | None,
+    *,
+    amount: float,
+    method: str,
+    job_title: str | None,
+    reference: str | None = None,
+) -> bool:
+    """Notify a BA that a payment has been sent / completed."""
+    first = _first_name(name)
+    method_label = "ACH (Direct Deposit)" if method == "ach_batch" else "PayPal/Venmo" if method == "paypal" else method
+    eta = "1-3 business days" if method == "ach_batch" else "instantly"
+    body = f"""
+    <h2 style="color: #1a1a1a; margin-top: 0;">Payment sent, {first}!</h2>
+    <p style="color: #4a4a4a; line-height: 1.6;">
+        We've just sent your payment for completed work.
+    </p>
+    <div style="background-color: #f9f9f9; padding: 16px; border-radius: 8px; margin: 16px 0;">
+        <p style="margin: 4px 0; color: #4a4a4a;"><strong>Amount:</strong> ${amount:.2f}</p>
+        <p style="margin: 4px 0; color: #4a4a4a;"><strong>Method:</strong> {method_label}</p>
+        <p style="margin: 4px 0; color: #4a4a4a;"><strong>Arrives:</strong> {eta}</p>
+        {f'<p style="margin: 4px 0; color: #4a4a4a;"><strong>Job:</strong> {job_title}</p>' if job_title else ''}
+        {f'<p style="margin: 4px 0; color: #4a4a4a; font-size: 12px;">Ref: {reference}</p>' if reference else ''}
+    </div>
+    <p style="color: #4a4a4a; line-height: 1.6;">
+        You can view all of your payments any time from your portal profile.
+    </p>
+    {_cta_button("View Payments", "/dashboard/profile")}
+    """
+    return _send_email(to_email, f"NMB Media - Payment Sent (${amount:.2f})", body)
 
 
 def send_ba_rejected_email(to_email: str, name: str | None, notes: str | None = None) -> bool:

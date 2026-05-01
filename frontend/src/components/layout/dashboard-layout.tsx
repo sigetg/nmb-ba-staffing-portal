@@ -16,6 +16,7 @@ interface DashboardLayoutProps {
     avatar?: string
     role: 'ba' | 'admin'
     baStatus?: BAStatus
+    onboardingComplete?: boolean
   }
   impersonation?: { baName: string; baId: string } | null
 }
@@ -31,6 +32,8 @@ const adminNavItems = [
   { label: 'Dashboard', href: '/admin/dashboard', icon: <Icons.Dashboard /> },
   { label: 'Jobs', href: '/admin/jobs', icon: <Icons.Jobs /> },
   { label: 'Brand Ambassadors', href: '/admin/bas', icon: <Icons.Users /> },
+  { label: 'Payouts', href: '/admin/payouts', icon: <Icons.Calendar /> },
+  { label: 'QuickBooks', href: '/admin/integrations/quickbooks', icon: <Icons.User /> },
 ]
 
 export function DashboardLayout({ children, user, impersonation }: DashboardLayoutProps) {
@@ -38,7 +41,11 @@ export function DashboardLayout({ children, user, impersonation }: DashboardLayo
   const router = useRouter()
   const supabase = createClient()
 
-  const baNavItems = user.baStatus === 'approved'
+  const isApproved = user.baStatus === 'approved'
+  const onboardingComplete = user.onboardingComplete !== false
+  const showFullBANav = isApproved && onboardingComplete
+
+  const baNavItems = showFullBANav
     ? allBaNavItems
     : allBaNavItems.filter(item => item.label === 'Dashboard' || item.label === 'Profile')
 

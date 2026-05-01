@@ -17,6 +17,8 @@ interface BA {
   created_at: string
   ba_photos: { url: string; photo_type: string }[]
   users: { email?: string } | null
+  w9_submitted_at?: string | null
+  payout_info_submitted_at?: string | null
 }
 
 type SortColumn = 'name' | 'joined' | 'status'
@@ -217,7 +219,12 @@ export function BAsTable({ bas }: BAsTableProps) {
                           {new Date(ba.created_at).toLocaleDateString()}
                         </td>
                         <td className="py-3 px-4">
-                          <Badge variant={baStatusBadgeVariant(ba.status)}>{formatBAStatus(ba.status)}</Badge>
+                          <div className="flex flex-col gap-1 items-start">
+                            <Badge variant={baStatusBadgeVariant(ba.status)}>{formatBAStatus(ba.status)}</Badge>
+                            {ba.status === 'approved' && (!ba.w9_submitted_at || !ba.payout_info_submitted_at) && (
+                              <Badge variant="warning">W-9 pending</Badge>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-2">

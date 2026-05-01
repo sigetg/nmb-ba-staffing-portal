@@ -1,10 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Card, CardContent, CardHeader, CardTitle, Badge } from '@/components/ui'
+import { Card, CardContent, CardHeader, CardTitle, Badge, PersistentBanner } from '@/components/ui'
 import { Calendar, Clock, CheckCircle2, Briefcase, ChevronRight } from 'lucide-react'
 import { getMultiDayDisplayStatus, getJobDateDisplay, getJobLocationDisplay, getLocalToday } from '@/lib/utils'
 import { getEffectiveBAProfile } from '@/lib/supabase/auth-helpers'
+import { isOnboardingComplete } from '@/lib/supabase/onboarding-guard'
 import type { JobWithDays } from '@/types'
 
 type AppWithJob = {
@@ -154,12 +155,15 @@ export default async function DashboardPage() {
 
   const { profile } = result
 
-  // Welcome redirect for newly approved BAs
-  if (profile.status === 'approved' && !profile.has_seen_welcome) {
+  const isApproved = profile.status === 'approved'
+  const onboardingComplete = isOnboardingComplete(profile)
+
+  // Approved BAs must finish the welcome stepper (W-9 + payout method) before
+  // they can see the full dashboard. has_seen_welcome alone is no longer enough
+  // for legacy users who were approved before W-9 collection existed.
+  if (isApproved && (!profile.has_seen_welcome || !onboardingComplete)) {
     redirect('/dashboard/welcome')
   }
-
-  const isApproved = profile.status === 'approved'
 
   // Only fetch expensive dashboard data for approved BAs
   const dashboardData = isApproved ? await getDashboardData(profile.id) : null
@@ -180,6 +184,16 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {isApproved && !onboardingComplete && (
+        <PersistentBanner
+          variant="warning"
+          title="Finish onboarding to start taking jobs"
+          message="We need your W-9 and payout method on file before you can apply for jobs."
+          ctaLabel="Complete onboarding"
+          ctaHref="/dashboard/welcome"
+        />
+      )}
+
       {/* Welcome Section */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

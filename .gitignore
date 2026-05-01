@@ -69,3 +69,10 @@ next-env.d.ts
 # Supabase
 supabase/.branches
 supabase/.temp
+
+# Claude Code local state
+.claude/
+.mcp.json
+
+# Local planning docs
+.planning/
