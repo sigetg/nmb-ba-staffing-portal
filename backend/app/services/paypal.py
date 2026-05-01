@@ -126,7 +126,7 @@ def get_payout_batch(batch_id: str) -> dict[str, Any]:
     return resp.json()
 
 
-def get_login_oauth_url(*, state: str, redirect_uri: str, scope: str = "openid email profile") -> str:
+def get_login_oauth_url(*, state: str, redirect_uri: str, scope: str = "openid email") -> str:
     """Build the "Log In with PayPal" OAuth consent URL.
 
     User redirected here logs into PayPal (or signs up), grants scope, and is
