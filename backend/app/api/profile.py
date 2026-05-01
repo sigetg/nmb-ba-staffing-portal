@@ -8,10 +8,9 @@ verified PayPal account.
 
 import logging
 import re
-import secrets
 from datetime import date
 
-from fastapi import APIRouter, Cookie, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, field_validator
 
@@ -19,7 +18,13 @@ from app.core.auth import CurrentUser, get_current_user
 from app.core.config import settings
 from app.core.supabase import get_supabase_client
 from app.services import dropbox_storage, paypal, qbo_sync
-from app.services.encryption import decrypt, encrypt, last4
+from app.services.encryption import (
+    decrypt,
+    encrypt,
+    last4,
+    sign_oauth_state,
+    verify_oauth_state,
+)
 from app.services.w9_pdf import generate_w9_pdf
 
 logger = logging.getLogger(__name__)
@@ -328,39 +333,31 @@ def _paypal_login_redirect_uri() -> str:
 async def paypal_connect_url(
     current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Returns the Log In with PayPal consent URL + the CSRF state to set as a cookie."""
+    """Returns the Log In with PayPal consent URL with an HMAC-signed state.
+
+    State carries user_id + nonce + signature so we don't need cookies
+    (which get rejected cross-site between staffing.nmbmedia.com and the
+    backend's Railway URL).
+    """
     if current_user.role != "ba":
         raise HTTPException(status_code=403, detail="Only BAs can connect PayPal")
-    state = secrets.token_urlsafe(24)
+    state = sign_oauth_state(current_user.id, purpose="paypal")
     url = paypal.get_login_oauth_url(
         state=state, redirect_uri=_paypal_login_redirect_uri()
     )
-    response = Response(content='{"url":"' + url + '","state":"' + state + '"}',
-                        media_type="application/json")
-    # Tie state to the user's session via a short-lived httponly cookie.
-    response.set_cookie(
-        key="paypal_oauth_state",
-        value=f"{current_user.id}:{state}",
-        max_age=600,
-        httponly=True,
-        samesite="lax",
-        secure=settings.environment == "production",
-    )
-    return response
+    return {"url": url}
 
 
 @router.get("/paypal/callback")
 async def paypal_callback(
     code: str,
     state: str,
-    paypal_oauth_state: str | None = Cookie(None),
 ):
-    """Handle PayPal OAuth redirect: verify state, exchange code, persist verified email."""
-    if not paypal_oauth_state or ":" not in paypal_oauth_state:
-        raise HTTPException(status_code=400, detail="Missing or invalid OAuth state cookie")
-    user_id, expected_state = paypal_oauth_state.split(":", 1)
-    if not secrets.compare_digest(expected_state, state):
-        raise HTTPException(status_code=400, detail="OAuth state mismatch")
+    """Handle PayPal OAuth redirect: verify HMAC state, exchange code, persist verified email."""
+    try:
+        user_id = verify_oauth_state(state, purpose="paypal")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid OAuth state: {exc}") from exc
 
     try:
         info = paypal.exchange_login_code(code, redirect_uri=_paypal_login_redirect_uri())
@@ -391,11 +388,8 @@ async def paypal_callback(
         }
     ).eq("id", res.data["id"]).execute()
 
-    # Redirect back to the welcome stepper; UI re-fetches state and shows "Connected as <email> ✓"
     target = f"{settings.frontend_url.rstrip('/')}/dashboard/welcome?paypal=connected"
-    redirect = RedirectResponse(url=target, status_code=302)
-    redirect.delete_cookie("paypal_oauth_state")
-    return redirect
+    return RedirectResponse(url=target, status_code=302)
 
 
 @router.post("/paypal/disconnect", response_model=PayoutMethodStatus)
