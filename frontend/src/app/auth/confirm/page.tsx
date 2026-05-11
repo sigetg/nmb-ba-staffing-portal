@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -18,6 +18,14 @@ const VALID_TYPES: EmailOtpType[] = [
 ]
 
 export default function ConfirmPage() {
+  return (
+    <Suspense fallback={null}>
+      <ConfirmInner />
+    </Suspense>
+  )
+}
+
+function ConfirmInner() {
   const router = useRouter()
   const params = useSearchParams()
   const tokenHash = params.get('token_hash')
