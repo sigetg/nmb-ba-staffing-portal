@@ -1,10 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { createClient } from '@/lib/supabase/client'
 import { Button, Input, Card, CardContent, CardHeader, CardTitle, Alert } from '@/components/ui'
 
 export default function RegisterPage() {
@@ -14,8 +12,6 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [emailSent, setEmailSent] = useState(false)
-  const router = useRouter()
-  const supabase = createClient()
 
   const validateForm = () => {
     if (!email.trim()) {
@@ -46,28 +42,18 @@ export default function RegisterPage() {
     setIsLoading(true)
 
     try {
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          data: {
-            role: 'ba',
-          },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password }),
       })
 
-      if (signUpError) {
-        setError(signUpError.message)
+      if (!res.ok) {
+        setError('An unexpected error occurred. Please try again.')
         return
       }
 
-      if (data.user && !data.session) {
-        // Email confirmation is required
-        setEmailSent(true)
-      } else if (data.user) {
-        router.push('/auth/setup')
-      }
+      setEmailSent(true)
     } catch {
       setError('An unexpected error occurred. Please try again.')
     } finally {
