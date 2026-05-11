@@ -1,8 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, EmailStr, Field
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.config import settings
+from app.core.supabase import get_supabase_client
+from app.services.email import (
+    send_password_reset_email,
+    send_signup_confirmation_email,
+)
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -13,8 +22,15 @@ class LoginRequest(BaseModel):
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str
-    role: str = "ba"  # "ba" or "admin"
+    password: str = Field(min_length=8)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class RegisterResponse(BaseModel):
+    email_sent: bool
 
 
 class UserResponse(BaseModel):
@@ -26,37 +42,69 @@ class UserResponse(BaseModel):
 
 @router.post("/login")
 async def login(request: LoginRequest):
-    """Login endpoint - delegates to Supabase Auth.
-
-    Note: Authentication is handled client-side via Supabase Auth.
-    This endpoint exists for documentation purposes only.
-    """
+    """Login is handled client-side via Supabase Auth."""
     raise HTTPException(
         status_code=501,
         detail="Authentication is handled client-side via Supabase Auth. Use the Supabase JS client to sign in.",
     )
 
 
-@router.post("/register")
-async def register(request: RegisterRequest):
-    """Register endpoint - delegates to Supabase Auth.
+@router.post("/register", response_model=RegisterResponse)
+def register(request: RegisterRequest) -> RegisterResponse:
+    """Create a new BA user and email them a confirmation link via Resend.
 
-    Note: Registration is handled client-side via Supabase Auth.
-    This endpoint exists for documentation purposes only.
+    Uses supabase.auth.admin.generate_link(type=signup) which both creates the
+    user (email_confirmed_at = null) and returns the confirmation action_link.
+    We then send that link ourselves through Resend instead of letting Supabase
+    deliver it. Always returns email_sent=True to prevent account enumeration.
     """
-    raise HTTPException(
-        status_code=501,
-        detail="Registration is handled client-side via Supabase Auth. Use the Supabase JS client to sign up.",
-    )
+    supabase = get_supabase_client()
+    try:
+        link = supabase.auth.admin.generate_link(
+            {
+                "type": "signup",
+                "email": request.email,
+                "password": request.password,
+                "options": {
+                    "redirect_to": f"{settings.frontend_url}/auth/callback",
+                    "data": {"role": "ba"},
+                },
+            }
+        )
+        send_signup_confirmation_email(request.email, link.properties.action_link)
+    except Exception as e:
+        logger.warning("register failed for %s: %s", request.email, e)
+    return RegisterResponse(email_sent=True)
+
+
+@router.post("/forgot-password", status_code=204)
+def forgot_password(request: ForgotPasswordRequest) -> Response:
+    """Send a password recovery link via Resend.
+
+    Uses supabase.auth.admin.generate_link(type=recovery) to mint a recovery
+    link, then delivers it through Resend. Always returns 204 even on failure
+    to prevent leaking which emails exist.
+    """
+    supabase = get_supabase_client()
+    try:
+        link = supabase.auth.admin.generate_link(
+            {
+                "type": "recovery",
+                "email": request.email,
+                "options": {
+                    "redirect_to": f"{settings.frontend_url}/auth/callback",
+                },
+            }
+        )
+        send_password_reset_email(request.email, link.properties.action_link)
+    except Exception as e:
+        logger.warning("forgot-password failed for %s: %s", request.email, e)
+    return Response(status_code=204)
 
 
 @router.post("/logout")
 async def logout():
-    """Logout endpoint.
-
-    Note: Logout is handled client-side via Supabase Auth.
-    This endpoint exists for documentation purposes only.
-    """
+    """Logout is handled client-side via Supabase Auth."""
     raise HTTPException(
         status_code=501,
         detail="Logout is handled client-side via Supabase Auth. Use the Supabase JS client to sign out.",
@@ -67,11 +115,7 @@ async def logout():
 async def get_current_user_info(
     current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Get current authenticated user information.
-
-    Returns the user's ID, email, role, and profile (if available).
-    Requires a valid JWT token in the Authorization header.
-    """
+    """Return the current authenticated user's id, email, role, and profile."""
     return UserResponse(
         id=current_user.id,
         email=current_user.email,

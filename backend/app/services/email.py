@@ -364,6 +364,52 @@ def send_job_reminder_email(
     return _send_email(to_email, f"NMB Media - Reminder: {job_title} Tomorrow", body)
 
 
+def send_password_reset_email(to_email: str, reset_url: str) -> bool:
+    """Send a Supabase-generated password recovery link via Resend."""
+    body = f"""
+    <h2 style="color: #1a1a1a; margin-top: 0;">Reset your password</h2>
+    <p style="color: #4a4a4a; line-height: 1.6;">
+        We received a request to reset the password on your NMB Media account.
+        Click the button below to choose a new one. This link expires in 1 hour.
+    </p>
+    <div style="text-align: center; margin: 32px 0;">
+        <a href="{reset_url}"
+           style="display: inline-block; background-color: #E8853D; color: white;
+                  padding: 12px 32px; text-decoration: none; border-radius: 8px;
+                  font-weight: 600;">
+            Reset Password
+        </a>
+    </div>
+    <p style="color: #999; font-size: 12px;">
+        If you didn't request this, you can safely ignore this email.
+    </p>
+    """
+    return _send_email(to_email, "NMB Media - Reset your password", body)
+
+
+def send_signup_confirmation_email(to_email: str, confirm_url: str) -> bool:
+    """Send a Supabase-generated signup confirmation link via Resend."""
+    body = f"""
+    <h2 style="color: #1a1a1a; margin-top: 0;">Confirm your email</h2>
+    <p style="color: #4a4a4a; line-height: 1.6;">
+        Welcome to NMB Media! Please confirm your email address to finish creating
+        your account.
+    </p>
+    <div style="text-align: center; margin: 32px 0;">
+        <a href="{confirm_url}"
+           style="display: inline-block; background-color: #E8853D; color: white;
+                  padding: 12px 32px; text-decoration: none; border-radius: 8px;
+                  font-weight: 600;">
+            Confirm Email
+        </a>
+    </div>
+    <p style="color: #999; font-size: 12px;">
+        If you didn't sign up for NMB Media, you can safely ignore this email.
+    </p>
+    """
+    return _send_email(to_email, "NMB Media - Confirm your email", body)
+
+
 def send_job_cancelled_email(
     to_email: str,
     name: str | None,
