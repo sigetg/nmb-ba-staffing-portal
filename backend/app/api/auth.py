@@ -65,13 +65,16 @@ def register(request: RegisterRequest) -> RegisterResponse:
                 "type": "signup",
                 "email": request.email,
                 "password": request.password,
-                "options": {
-                    "redirect_to": f"{settings.frontend_url}/auth/callback",
-                    "data": {"role": "ba"},
-                },
+                "options": {"data": {"role": "ba"}},
             }
         )
-        send_signup_confirmation_email(request.email, link.properties.action_link)
+        confirm_url = (
+            f"{settings.frontend_url}/auth/confirm"
+            f"?token_hash={link.properties.hashed_token}"
+            f"&type=signup"
+            f"&next=/auth/setup"
+        )
+        send_signup_confirmation_email(request.email, confirm_url)
     except Exception as e:
         logger.warning("register failed for %s: %s", request.email, e)
     return RegisterResponse(email_sent=True)
@@ -91,12 +94,16 @@ def forgot_password(request: ForgotPasswordRequest) -> Response:
             {
                 "type": "recovery",
                 "email": request.email,
-                "options": {
-                    "redirect_to": f"{settings.frontend_url}/auth/callback",
-                },
+                "options": {},
             }
         )
-        send_password_reset_email(request.email, link.properties.action_link)
+        reset_url = (
+            f"{settings.frontend_url}/auth/confirm"
+            f"?token_hash={link.properties.hashed_token}"
+            f"&type=recovery"
+            f"&next=/auth/reset-password"
+        )
+        send_password_reset_email(request.email, reset_url)
     except Exception as e:
         logger.warning("forgot-password failed for %s: %s", request.email, e)
     return Response(status_code=204)
