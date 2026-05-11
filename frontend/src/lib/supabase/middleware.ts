@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 // Routes that don't require authentication
-const publicRoutes = ['/', '/auth/login', '/auth/register', '/auth/setup', '/auth/callback', '/auth/forgot-password', '/auth/reset-password', '/admin/login', '/health']
+const publicRoutes = ['/', '/auth/login', '/auth/register', '/auth/setup', '/auth/callback', '/auth/confirm', '/auth/forgot-password', '/auth/reset-password', '/admin/login', '/health']
 
 // Routes that require admin role (used for future role-based routing)
 const _adminRoutes = ['/admin']
@@ -52,7 +52,7 @@ export async function updateSession(request: NextRequest) {
   if (isPublicRoute) {
     // If user is logged in and trying to access auth pages, redirect to appropriate dashboard
     // But allow /auth/setup so new signups can complete their profile
-    if (user && pathname !== '/auth/setup' && pathname !== '/auth/reset-password' && (pathname.startsWith('/auth/') || pathname === '/admin/login' || pathname === '/')) {
+    if (user && pathname !== '/auth/setup' && pathname !== '/auth/reset-password' && pathname !== '/auth/confirm' && (pathname.startsWith('/auth/') || pathname === '/admin/login' || pathname === '/')) {
       // Only query role when we need to redirect authenticated users away from login pages
       const { data: userData } = await supabase
         .from('users')
