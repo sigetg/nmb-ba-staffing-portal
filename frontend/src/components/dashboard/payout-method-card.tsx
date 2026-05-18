@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { CheckCircle2, ExternalLink, Loader2, Mail } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 import {
   Alert,
   Button,
@@ -12,13 +13,9 @@ import {
 } from '@/components/ui'
 import { disconnectPaypal, getPayoutMethod, getPaypalConnectUrl } from '@/lib/api'
 
-interface Props {
-  accessToken: string
-  onBack: () => void
-  onSubmitted: () => void
-}
-
-export function StepPayPal({ accessToken, onBack, onSubmitted }: Props) {
+export function PayoutMethodCard() {
+  const supabase = createClient()
+  const [accessToken, setAccessToken] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [connectedEmail, setConnectedEmail] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -26,9 +23,12 @@ export function StepPayPal({ accessToken, onBack, onSubmitted }: Props) {
 
   useEffect(() => {
     let cancelled = false
-    async function check() {
+    async function init() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session || cancelled) return
+      setAccessToken(session.access_token)
       try {
-        const status = await getPayoutMethod(accessToken)
+        const status = await getPayoutMethod(session.access_token)
         if (cancelled) return
         if (status.method === 'paypal' && status.paypal_email) {
           setConnectedEmail(status.paypal_email)
@@ -39,27 +39,22 @@ export function StepPayPal({ accessToken, onBack, onSubmitted }: Props) {
         if (!cancelled) setLoading(false)
       }
     }
-    check()
+    init()
 
-    // If user just returned from PayPal OAuth, the URL has ?paypal=connected — refresh state.
+    // Returning from PayPal OAuth lands here with ?paypal=connected.
     const url = new URL(window.location.href)
     if (url.searchParams.get('paypal') === 'connected') {
-      // Strip the param; state will refresh via the check() above and via re-poll on focus
       url.searchParams.delete('paypal')
       window.history.replaceState({}, '', url.toString())
     }
 
-    function onFocus() {
-      check()
-    }
-    window.addEventListener('focus', onFocus)
     return () => {
       cancelled = true
-      window.removeEventListener('focus', onFocus)
     }
-  }, [accessToken])
+  }, [supabase])
 
   async function handleConnect() {
+    if (!accessToken) return
     setBusy(true)
     setError(null)
     try {
@@ -67,12 +62,12 @@ export function StepPayPal({ accessToken, onBack, onSubmitted }: Props) {
       window.location.href = url
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start PayPal connect')
-    } finally {
       setBusy(false)
     }
   }
 
   async function handleDisconnect() {
+    if (!accessToken) return
     setBusy(true)
     setError(null)
     try {
@@ -86,14 +81,14 @@ export function StepPayPal({ accessToken, onBack, onSubmitted }: Props) {
   }
 
   return (
-    <Card className="max-w-2xl w-full mx-auto">
+    <Card id="payout">
       <CardHeader>
         <div className="flex items-center gap-2">
           <Mail className="w-5 h-5 text-primary-400" />
-          <CardTitle>Connect PayPal</CardTitle>
+          <CardTitle>Payout Method</CardTitle>
         </div>
         <p className="text-sm text-primary-400">
-          We pay through PayPal. Connect your PayPal account so we can send funds to you securely. If you don&apos;t have an account yet, you&apos;ll be able to sign up during the connect flow.
+          We pay through PayPal. Connect your PayPal account so we can send your earnings.
         </p>
       </CardHeader>
       <CardContent>
@@ -122,10 +117,10 @@ export function StepPayPal({ accessToken, onBack, onSubmitted }: Props) {
             </button>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <Button
               onClick={handleConnect}
-              disabled={busy}
+              disabled={busy || !accessToken}
               leftIcon={<ExternalLink className="w-4 h-4" />}
             >
               Connect PayPal
@@ -137,15 +132,6 @@ export function StepPayPal({ accessToken, onBack, onSubmitted }: Props) {
         )}
 
         {error && <Alert variant="error" className="mt-4">{error}</Alert>}
-
-        <div className="flex justify-between pt-6">
-          <Button type="button" variant="ghost" onClick={onBack} disabled={busy}>
-            Back
-          </Button>
-          <Button type="button" disabled={!connectedEmail || busy} onClick={onSubmitted}>
-            Continue
-          </Button>
-        </div>
       </CardContent>
     </Card>
   )

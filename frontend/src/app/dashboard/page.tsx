@@ -188,9 +188,19 @@ export default async function DashboardPage() {
         <PersistentBanner
           variant="warning"
           title="Finish onboarding to start taking jobs"
-          message="We need your W-9 and payout method on file before you can apply for jobs."
+          message="We need your W-9 and ID on file before you can apply for jobs."
           ctaLabel="Complete onboarding"
           ctaHref="/dashboard/welcome"
+        />
+      )}
+
+      {process.env.NEXT_PUBLIC_PAYOUT_PROMPT_ENABLED === 'true' && isApproved && onboardingComplete && !profile.payout_info_submitted_at && (stats?.completed ?? 0) > 0 && (
+        <PersistentBanner
+          variant="warning"
+          title="Connect PayPal to receive your earnings"
+          message="You've completed a job — add your PayPal so we can pay you."
+          ctaLabel="Connect PayPal"
+          ctaHref="/dashboard/profile#payout"
         />
       )}
 

@@ -30,7 +30,9 @@ export function StepBasicInfo() {
 
       {/* Job Type */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Job Type</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Job Type <span className="text-red-500">*</span>
+        </label>
         <select
           value={state.jobTypeId}
           onChange={(e) => setField('jobTypeId', e.target.value)}
@@ -45,13 +47,13 @@ export function StepBasicInfo() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Input
-          label="Job Title"
+          label="Job Title *"
           value={state.title}
           onChange={(e) => setField('title', e.target.value)}
           placeholder="e.g., Brand Ambassador - Product Demo"
         />
         <Input
-          label="Brand"
+          label="Brand *"
           value={state.brand}
           onChange={(e) => setField('brand', e.target.value)}
           placeholder="e.g., Nike, Apple"
@@ -59,7 +61,7 @@ export function StepBasicInfo() {
       </div>
 
       <Textarea
-        label="Description"
+        label="Description *"
         value={state.description}
         onChange={(e) => setField('description', e.target.value)}
         placeholder="Job description, requirements, and expectations..."
@@ -68,7 +70,7 @@ export function StepBasicInfo() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Input
-          label="Pay Rate ($/hr)"
+          label="Pay Rate ($/hr) *"
           type="number"
           step="0.01"
           min="0"
@@ -77,7 +79,7 @@ export function StepBasicInfo() {
           placeholder="e.g., 25.00"
         />
         <Input
-          label="Available Slots"
+          label="Available Slots *"
           type="number"
           min="1"
           value={state.slots}

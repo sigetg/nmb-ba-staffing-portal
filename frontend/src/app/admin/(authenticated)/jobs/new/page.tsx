@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button, Alert } from '@/components/ui'
 import { ChevronLeft, ChevronRight, Save } from 'lucide-react'
 import { uploadJobWorksheet } from '@/lib/api'
-import { WizardProvider, useWizard } from '@/components/admin/job-wizard/wizard-context'
+import { WizardProvider, useWizard, type WizardState } from '@/components/admin/job-wizard/wizard-context'
 import { WizardProgress } from '@/components/admin/job-wizard/wizard-progress'
 import { StepBasicInfo } from '@/components/admin/job-wizard/step-basic-info'
 import { StepDays } from '@/components/admin/job-wizard/step-days'
@@ -31,9 +31,17 @@ function WizardContent() {
   const saveJob = async (status: 'draft' | 'published') => {
     setError(null)
 
-    // Draft only requires a title
+    // Draft only requires a title; the publish path is gated by canGoNext().
     if (status === 'draft' && !state.title.trim()) {
       setError('Title is required to save a draft.')
+      return
+    }
+
+    // Required-field check applied to both draft and publish, since these
+    // columns are NOT NULL in the DB.
+    const missing = getMissingRequiredFields(state)
+    if (missing.length > 0) {
+      setError(`Please fill in required field${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}.`)
       return
     }
 
@@ -50,8 +58,8 @@ function WizardContent() {
       // 1. Insert the job
       const { data: job, error: insertError } = await supabase.from('jobs').insert({
         title: state.title.trim(),
-        brand: state.brand.trim() || null,
-        description: state.description.trim() || null,
+        brand: state.brand.trim(),
+        description: state.description.trim(),
         pay_rate: state.payRate ? parseFloat(state.payRate) : 0,
         slots: state.slots ? parseInt(state.slots) : 1,
         slots_filled: 0,
@@ -62,7 +70,7 @@ function WizardContent() {
       }).select('id').single()
 
       if (insertError || !job) {
-        setError(insertError?.message || 'Failed to create job')
+        setError(humanizeDbError(insertError) || 'Failed to create job')
         return
       }
 
@@ -187,6 +195,39 @@ function WizardContent() {
       </div>
     </div>
   )
+}
+
+// User-friendly labels for `jobs` columns surfaced in error messages.
+const JOB_COLUMN_LABELS: Record<string, string> = {
+  title: 'Job Title',
+  brand: 'Brand',
+  description: 'Description',
+  pay_rate: 'Pay Rate',
+  slots: 'Available Slots',
+  job_type_id: 'Job Type',
+}
+
+function getMissingRequiredFields(state: WizardState): string[] {
+  const missing: string[] = []
+  if (!state.title.trim()) missing.push('Job Title')
+  if (!state.brand.trim()) missing.push('Brand')
+  if (!state.description.trim()) missing.push('Description')
+  if (!state.payRate || parseFloat(state.payRate) <= 0) missing.push('Pay Rate')
+  if (!state.slots || parseInt(state.slots) <= 0) missing.push('Available Slots')
+  if (!state.jobTypeId) missing.push('Job Type')
+  return missing
+}
+
+// Translate Postgres NOT NULL / unique / FK errors into user-readable text.
+function humanizeDbError(err: { message?: string; code?: string } | null | undefined): string | null {
+  if (!err?.message) return null
+  const notNull = err.message.match(/null value in column "([^"]+)"/i)
+  if (notNull) {
+    const col = notNull[1]
+    const label = JOB_COLUMN_LABELS[col] || col
+    return `${label} is required.`
+  }
+  return err.message
 }
 
 export default function NewJobPage() {

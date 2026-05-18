@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Alert } from '@/components/ui'
 import { ChevronLeft, MapPin, Camera, Loader2, CheckCircle2, Navigation } from 'lucide-react'
 import { uploadJobPhoto } from '@/lib/api'
+import { ContactHelpLine } from '@/components/contact-phone'
 import type { JobDayLocation } from '@/types'
 import { getImpersonatedBAId } from '@/lib/impersonation'
 
@@ -147,6 +148,8 @@ export default function DepartLocationPage({ params }: { params: Promise<{ id: s
         <button onClick={() => router.back()} className="p-2 rounded-lg hover:bg-gray-100"><ChevronLeft className="w-5 h-5" /></button>
         <h1 className="text-2xl font-bold text-heading">Depart Location</h1>
       </div>
+
+      <ContactHelpLine />
 
       {error && <Alert variant="error" onClose={() => setError(null)}>{error}</Alert>}
 

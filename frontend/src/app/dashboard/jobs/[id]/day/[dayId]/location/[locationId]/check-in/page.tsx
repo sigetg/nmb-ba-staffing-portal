@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Alert, Textarea } from '@/components/ui'
 import { ChevronLeft, MapPin, Clock, CheckCircle2, XCircle, Camera, Loader2, AlertTriangle } from 'lucide-react'
 import { DayLocationTimeline } from '@/components/worker/day-location-timeline'
+import { ContactHelpLine } from '@/components/contact-phone'
 import { uploadJobPhoto } from '@/lib/api'
 import type { JobDayLocation, LocationCheckIn } from '@/types'
 import { getImpersonatedBAId } from '@/lib/impersonation'
@@ -203,6 +204,8 @@ export default function LocationCheckInPage({ params }: { params: Promise<{ id: 
         <Link href="/dashboard/my-jobs" className="p-2 rounded-lg hover:bg-gray-100"><ChevronLeft className="w-5 h-5" /></Link>
         <h1 className="text-2xl font-bold text-heading">Check In</h1>
       </div>
+
+      <ContactHelpLine />
 
       {error && <Alert variant="error" onClose={() => setError(null)}>{error}</Alert>}
       {success && <Alert variant="success">{success}</Alert>}

@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Alert, Select } from '@/components/ui'
 import { ChevronLeft, MapPin, Clock, Camera, Loader2, ChevronDown, ChevronUp, CheckCircle2, X } from 'lucide-react'
 import { DayLocationTimeline } from '@/components/worker/day-location-timeline'
+import { ContactPhoneBanner } from '@/components/contact-phone'
 import { uploadJobPhoto, deleteJobPhoto } from '@/lib/api'
 import type { JobDayLocation, LocationCheckIn, JobPhoto } from '@/types'
 import { getImpersonatedBAId } from '@/lib/impersonation'
@@ -163,6 +164,8 @@ export default function LocationActivePage({ params }: { params: Promise<{ id: s
       </div>
 
       {error && <Alert variant="error" onClose={() => setError(null)}>{error}</Alert>}
+
+      <ContactPhoneBanner />
 
       {/* Timer + Location */}
       <Card>

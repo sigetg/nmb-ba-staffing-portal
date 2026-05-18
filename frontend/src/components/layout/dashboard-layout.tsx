@@ -2,10 +2,12 @@
 
 import { useState, ReactNode } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Sidebar, Icons } from './sidebar'
 import { Header } from './header'
 import { createClient } from '@/lib/supabase/client'
+import { ContactHelpLine } from '@/components/contact-phone'
 import type { BAStatus } from '@/types'
 
 interface DashboardLayoutProps {
@@ -34,6 +36,7 @@ const adminNavItems = [
   { label: 'Brand Ambassadors', href: '/admin/bas', icon: <Icons.Users /> },
   { label: 'Payouts', href: '/admin/payouts', icon: <Icons.Calendar /> },
   { label: 'QuickBooks', href: '/admin/integrations/quickbooks', icon: <Icons.User /> },
+  { label: 'Settings', href: '/admin/settings', icon: <Icons.Settings /> },
 ]
 
 export function DashboardLayout({ children, user, impersonation }: DashboardLayoutProps) {
@@ -72,15 +75,26 @@ export function DashboardLayout({ children, user, impersonation }: DashboardLayo
   )
 
   const sidebarFooter = (
-    <button
-      onClick={handleLogout}
-      className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm font-medium text-primary-400 hover:bg-gray-100 transition-colors"
-    >
-      <span className="w-5 h-5">
-        <Icons.Logout />
-      </span>
-      Logout
-    </button>
+    <div className="space-y-2">
+      <button
+        onClick={handleLogout}
+        className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm font-medium text-primary-400 hover:bg-gray-100 transition-colors"
+      >
+        <span className="w-5 h-5">
+          <Icons.Logout />
+        </span>
+        Logout
+      </button>
+      {user.role === 'ba' && (
+        <div className="px-3">
+          <ContactHelpLine variant="footer" />
+        </div>
+      )}
+      <div className="px-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-400">
+        <Link href="/privacy" className="hover:text-gray-600">Privacy</Link>
+        <Link href="/terms" className="hover:text-gray-600">Terms</Link>
+      </div>
+    </div>
   )
 
   return (

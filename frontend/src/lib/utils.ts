@@ -118,6 +118,27 @@ export function haversineDistance(lat1: number, lng1: number, lat2: number, lng2
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
+/** Format a US phone string as (XXX) XXX-XXXX; falls back to the raw input. */
+export function formatPhoneNumber(raw: string | null | undefined): string {
+  if (!raw) return ''
+  const digits = raw.replace(/\D/g, '')
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+  }
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`
+  }
+  return raw
+}
+
+/** Build a tel: href, normalizing to +1XXXXXXXXXX. Returns '' if no digits. */
+export function telHref(raw: string | null | undefined): string {
+  if (!raw) return ''
+  const digits = raw.replace(/\D/g, '')
+  if (!digits) return ''
+  return `tel:+${digits.startsWith('1') ? digits : '1' + digits}`
+}
+
 /** Get minimum distance from a user's location to any of a job's locations (miles), or null */
 export function getMinJobDistance(
   job: JobWithDays,
