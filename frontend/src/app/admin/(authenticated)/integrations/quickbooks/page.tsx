@@ -253,6 +253,17 @@ export default function QboIntegrationsPage() {
                 Opens Intuit&apos;s consent page. After authorizing, you&apos;ll return here.
                 <ExternalLink className="w-3 h-3 inline ml-1" />
               </p>
+              <p className="text-xs text-gray-500">
+                By connecting QuickBooks you agree to our{' '}
+                <Link href="/terms" className="underline hover:text-gray-700" target="_blank">
+                  Terms of Service
+                </Link>{' '}
+                and{' '}
+                <Link href="/privacy" className="underline hover:text-gray-700" target="_blank">
+                  Privacy Policy
+                </Link>
+                . What we send to and receive from QuickBooks is described in the Privacy Policy.
+              </p>
             </div>
           )}
         </CardContent>

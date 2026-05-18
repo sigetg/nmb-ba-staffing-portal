@@ -221,7 +221,7 @@ export function BAsTable({ bas }: BAsTableProps) {
                         <td className="py-3 px-4">
                           <div className="flex flex-col gap-1 items-start">
                             <Badge variant={baStatusBadgeVariant(ba.status)}>{formatBAStatus(ba.status)}</Badge>
-                            {ba.status === 'approved' && (!ba.w9_submitted_at || !ba.payout_info_submitted_at) && (
+                            {ba.status === 'approved' && !ba.w9_submitted_at && (
                               <Badge variant="warning">W-9 pending</Badge>
                             )}
                           </div>

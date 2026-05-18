@@ -198,7 +198,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   const canGoNext = useCallback(() => {
     switch (state.currentStep) {
       case 0: // Basic Info
-        return !!(state.title.trim() && state.brand.trim() && state.payRate && parseFloat(state.payRate) > 0 && state.slots && parseInt(state.slots) > 0 && state.jobTypeId)
+        return !!(state.title.trim() && state.brand.trim() && state.description.trim() && state.payRate && parseFloat(state.payRate) > 0 && state.slots && parseInt(state.slots) > 0 && state.jobTypeId)
       case 1: // Days
         return state.days.length > 0
       case 2: // Locations

@@ -57,7 +57,7 @@ export default async function BADashboardLayout({
   const result = await getBAUserWithProfile()
 
   if (!result) {
-    redirect('/auth/login')
+    redirect('/')
   }
 
   const { user, role, profile } = result

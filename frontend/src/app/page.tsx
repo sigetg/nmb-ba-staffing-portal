@@ -6,6 +6,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Input, Card, CardContent, CardHeader, CardTitle, Alert } from '@/components/ui'
+import { ContactHelpLine } from '@/components/contact-phone'
 
 function SignInForm() {
   const [email, setEmail] = useState('')
@@ -182,8 +183,29 @@ export default function Home() {
           <Suspense>
             <SignInForm />
           </Suspense>
+
+          <p className="mt-8 text-center text-xs text-primary-400">
+            By signing in, you agree to our{' '}
+            <Link href="/terms" className="underline hover:text-gray-700">
+              Terms of Service
+            </Link>{' '}
+            and{' '}
+            <Link href="/privacy" className="underline hover:text-gray-700">
+              Privacy Policy
+            </Link>
+            .
+          </p>
         </div>
       </main>
+
+      <footer className="border-t border-gray-200 mt-8">
+        <div className="container mx-auto px-4 py-6 text-xs text-gray-500 flex flex-wrap items-center justify-center gap-4">
+          <span>© {new Date().getFullYear()} National Mobile Billboards LLC</span>
+          <Link href="/privacy" className="hover:text-gray-700">Privacy</Link>
+          <Link href="/terms" className="hover:text-gray-700">Terms</Link>
+          <ContactHelpLine variant="footer" />
+        </div>
+      </footer>
     </div>
   )
 }

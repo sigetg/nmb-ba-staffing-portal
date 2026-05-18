@@ -293,3 +293,9 @@ export interface JobPhoto {
   job_day_location_id?: string | null
   created_at: string
 }
+
+// App-wide settings (single row, edited from /admin/settings)
+export interface AppSettings {
+  contact_phone: string | null
+  updated_at: string
+}

@@ -88,10 +88,10 @@ export function StepDL({ accessToken, onBack, onSubmitted }: Props) {
       <CardHeader>
         <div className="flex items-center gap-2">
           <IdCard className="w-5 h-5 text-primary-400" />
-          <CardTitle>Driver&apos;s License</CardTitle>
+          <CardTitle>Driver&apos;s License or State ID</CardTitle>
         </div>
         <p className="text-sm text-primary-400">
-          Upload clear photos of the front and back of your driver&apos;s license. Both are required.
+          Upload clear photos of the front and back of your driver&apos;s license or state-issued ID. Both sides are required.
         </p>
       </CardHeader>
       <CardContent>
