@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { DashboardLayout } from '@/components/layout'
 import { getBAUserWithProfile, getUserWithRole } from '@/lib/supabase/auth-helpers'
 import { createClient } from '@/lib/supabase/server'
+import { SessionReset } from '@/components/auth/session-reset'
 
 export default async function BADashboardLayout({
   children,
@@ -57,7 +58,10 @@ export default async function BADashboardLayout({
   const result = await getBAUserWithProfile()
 
   if (!result) {
-    redirect('/')
+    // Don't redirect — middleware would bounce us right back if it still
+    // sees auth cookies, producing a loop. Render a client-side resetter
+    // that clears `sb-*` cookies in the browser and then navigates to `/`.
+    return <SessionReset />
   }
 
   const { user, role, profile } = result
