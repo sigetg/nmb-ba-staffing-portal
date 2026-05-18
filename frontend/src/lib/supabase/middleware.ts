@@ -55,6 +55,32 @@ export async function updateSession(request: NextRequest) {
   const errorCode = (error as { code?: string } | null | undefined)?.code
   const isTransientRefresh = errorCode === 'refresh_token_already_used'
 
+  // Track consecutive transient-refresh failures so we can recover users whose
+  // refresh token is permanently revoked (e.g., consumed by a parallel request
+  // that committed cookies first, leaving this browser with a forever-stale
+  // token). Without this, the loop becomes: middleware treats user as
+  // transient-authenticated → redirects to /dashboard → server-component
+  // getUser also fails → layout redirects to / → repeat. After a few hits we
+  // force-clear the supabase auth cookies so the user lands on the login page.
+  const TRANSIENT_COUNT_COOKIE = '_auth_t'
+  const TRANSIENT_LIMIT = 3
+  const priorTransientCount = parseInt(
+    request.cookies.get(TRANSIENT_COUNT_COOKIE)?.value || '0',
+    10
+  )
+
+  if (isTransientRefresh && priorTransientCount >= TRANSIENT_LIMIT) {
+    // Stuck: nuke the supabase auth cookies and bounce to the login page.
+    const reset = NextResponse.redirect(new URL('/', request.url))
+    for (const c of request.cookies.getAll()) {
+      if (c.name.startsWith('sb-')) {
+        reset.cookies.set(c.name, '', { path: '/', maxAge: 0 })
+      }
+    }
+    reset.cookies.set(TRANSIENT_COUNT_COOKIE, '', { path: '/', maxAge: 0 })
+    return reset
+  }
+
   if (isTransientRefresh) {
     // Restore the request cookies (setAll mutated them) and rebuild a
     // clean response without the cleared-cookie headers.
@@ -67,6 +93,16 @@ export async function updateSession(request: NextRequest) {
       request.cookies.set(c.name, c.value)
     }
     supabaseResponse = NextResponse.next({ request })
+    // Increment the counter; short TTL so it self-clears once the user
+    // navigates past the race condition.
+    supabaseResponse.cookies.set(
+      TRANSIENT_COUNT_COOKIE,
+      String(priorTransientCount + 1),
+      { path: '/', httpOnly: true, sameSite: 'lax', maxAge: 120 }
+    )
+  } else if (priorTransientCount > 0) {
+    // Auth state resolved (success or genuine logout) — reset the counter.
+    supabaseResponse.cookies.set(TRANSIENT_COUNT_COOKIE, '', { path: '/', maxAge: 0 })
   }
 
   // For routing purposes, treat transient-refresh users as logged in.
