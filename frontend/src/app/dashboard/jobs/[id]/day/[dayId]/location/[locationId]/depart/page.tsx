@@ -200,7 +200,7 @@ export default function DepartLocationPage({ params }: { params: Promise<{ id: s
         <CardContent>
           {departPhoto ? (
             <div className="flex items-center gap-4">
-              <div className="relative w-20 h-20 rounded-lg overflow-hidden border"><Image src={departPhoto} alt="Departure" fill className="object-cover" /></div>
+              <div className="relative w-20 h-20 rounded-lg overflow-hidden border"><Image src={departPhoto} alt="Departure" fill sizes="80px" className="object-cover" /></div>
               <div className="flex items-center gap-2 text-green-700"><CheckCircle2 className="w-5 h-5" /><span className="font-medium">Photo uploaded</span></div>
             </div>
           ) : (

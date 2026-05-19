@@ -489,7 +489,7 @@ export default function ReportPreviewPage() {
                       isSelected ? 'border-primary-400 ring-2 ring-primary-200' : 'border-gray-200 opacity-50'
                     }`}
                   >
-                    <Image src={photo.url} alt={`${baName} - ${photo.photo_type}`} fill className="object-cover" />
+                    <Image src={photo.url} alt={`${baName} - ${photo.photo_type}`} fill sizes="(max-width: 768px) 50vw, 200px" className="object-cover" />
                     <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs p-1 truncate">
                       {baName}
                     </div>
