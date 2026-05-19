@@ -248,7 +248,7 @@ export default function LocationActivePage({ params }: { params: Promise<{ id: s
                   <div className="px-4 pb-3 grid grid-cols-4 gap-2">
                     {catPhotos.map(p => (
                       <div key={p.id} className="relative aspect-square rounded overflow-hidden border group">
-                        <Image src={p.url} alt={cat.label} fill className="object-cover" />
+                        <Image src={p.url} alt={cat.label} fill sizes="128px" className="object-cover" />
                         <button
                           type="button"
                           onClick={() => handlePhotoDelete(p, cat.value)}
