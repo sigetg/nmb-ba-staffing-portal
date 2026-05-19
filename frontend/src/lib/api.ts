@@ -74,6 +74,26 @@ export async function uploadBAPhoto(
   return res.json()
 }
 
+export async function downloadProxiedFile(
+  accessToken: string,
+  url: string,
+  filename: string
+): Promise<void> {
+  const res = await apiRequest(
+    `/api/files/proxy-download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`,
+    accessToken
+  )
+  const blob = await res.blob()
+  const blobUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(blobUrl)
+}
+
 export async function uploadBAResume(
   accessToken: string,
   file: File

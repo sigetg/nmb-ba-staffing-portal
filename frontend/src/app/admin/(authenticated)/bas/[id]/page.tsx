@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge, Alert, Avatar, Textarea } from '@/components/ui'
 import { ChevronLeft, Check, X, FileText, Save, Eye } from 'lucide-react'
 import { startImpersonation } from '@/lib/actions/impersonation'
+import { downloadProxiedFile } from '@/lib/api'
 import type { BAProfile, BAPhoto, JobApplication, JobWithDays } from '@/types'
 import { formatJobStatus, getMultiDayDisplayStatus, getJobStatusBadgeVariant, getJobDateDisplay } from '@/lib/utils'
 
@@ -352,15 +353,16 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
         </CardHeader>
         <CardContent>
           {profile.resume_url ? (
-            <a
-              href={profile.resume_url}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={async () => {
+                const { data: { session } } = await supabase.auth.getSession()
+                if (session?.access_token) await downloadProxiedFile(session.access_token, profile.resume_url!, 'resume.pdf')
+              }}
               className="inline-flex items-center gap-2 px-4 py-2 bg-primary-50 text-primary-700 rounded-lg hover:bg-primary-100 transition-colors"
             >
               <FileText className="w-4 h-4" />
               Download Resume
-            </a>
+            </button>
           ) : (
             <p className="text-sm text-gray-400">No resume uploaded</p>
           )}
