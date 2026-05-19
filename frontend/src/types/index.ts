@@ -241,6 +241,8 @@ export interface LocationCheckIn {
   check_out_time?: string | null
   check_out_latitude?: number | null
   check_out_longitude?: number | null
+  check_out_gps_override?: boolean
+  check_out_gps_override_explanation?: string | null
   is_end_of_day: boolean
   skipped: boolean
   skipped_reason?: string | null

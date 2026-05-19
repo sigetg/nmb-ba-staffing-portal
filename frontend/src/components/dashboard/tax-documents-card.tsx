@@ -99,7 +99,7 @@ export function TaxDocumentsCard() {
         </div>
 
         <p className="text-xs text-gray-500 mt-4">
-          Year-end 1099-NECs are issued by NMB Media&apos;s accountant via QuickBooks Online — you&apos;ll receive yours by mail or electronically based on your preferences.
+          Year-end 1099-NECs are issued by NMB Media&apos;s accountant via QuickBooks Online. You&apos;ll receive yours by mail or electronically based on your preferences.
         </p>
       </CardContent>
     </Card>

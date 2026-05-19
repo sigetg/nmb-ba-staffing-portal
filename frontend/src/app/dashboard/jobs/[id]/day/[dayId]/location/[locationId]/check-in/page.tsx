@@ -239,6 +239,15 @@ export default function LocationCheckInPage({ params }: { params: Promise<{ id: 
         </Card>
       )}
 
+      {/* Check-in instructions */}
+      <Card>
+        <CardContent className="py-4">
+          <p className="text-sm text-gray-600 leading-relaxed">
+            Check in as soon as you arrive on location. Your check-in records your arrival time and GPS coordinates, which is how we track your hours for this shift. You will need to share your location and take a quick photo to complete check-in.
+          </p>
+        </CardContent>
+      </Card>
+
       {/* GPS */}
       <Card>
         <CardHeader><CardTitle>Your Location</CardTitle></CardHeader>
@@ -252,10 +261,6 @@ export default function LocationCheckInPage({ params }: { params: Promise<{ id: 
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="p-3 bg-gray-50 rounded-lg">
-                <p className="font-mono text-sm">{gpsLocation.latitude.toFixed(6)}, {gpsLocation.longitude.toFixed(6)}</p>
-              </div>
-
               {distance !== null && (
                 <div className={`p-3 rounded-lg ${isWithinRange ? 'bg-green-50' : 'bg-red-50'}`}>
                   <div className="flex items-center gap-2">
@@ -277,10 +282,10 @@ export default function LocationCheckInPage({ params }: { params: Promise<{ id: 
                 <button
                   type="button"
                   onClick={() => setShowGpsOverride(true)}
-                  className="flex items-center gap-2 text-sm text-amber-600 hover:text-amber-700"
+                  className="flex items-center gap-2 w-full px-4 py-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-300 rounded-lg hover:bg-amber-100"
                 >
-                  <AlertTriangle className="w-4 h-4" />
-                  I&apos;m at the right place — override GPS check
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  I&apos;m at the right place, override GPS check
                 </button>
               )}
 
@@ -317,7 +322,7 @@ export default function LocationCheckInPage({ params }: { params: Promise<{ id: 
               <label className="inline-flex items-center gap-2 px-4 py-2 bg-primary-400 text-white rounded-lg hover:bg-primary-500 cursor-pointer">
                 {isUploadingPhoto ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-5 h-5" />}
                 {isUploadingPhoto ? 'Uploading...' : 'Take Photo'}
-                <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} className="hidden" disabled={isUploadingPhoto || !profileId} />
+                <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" disabled={isUploadingPhoto || !profileId} />
               </label>
             </div>
           )}

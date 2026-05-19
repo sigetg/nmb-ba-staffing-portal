@@ -273,7 +273,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             {jobDays.map((day, dayIdx) => (
               <div key={day.id} className="border border-gray-200 rounded-lg p-4">
                 <h4 className="font-medium text-gray-900 mb-2">
-                  Day {dayIdx + 1} — {parseLocalDate(day.date).toLocaleDateString('en-US', {
+                  Day {dayIdx + 1}: {parseLocalDate(day.date).toLocaleDateString('en-US', {
                     weekday: 'long',
                     month: 'long',
                     day: 'numeric',

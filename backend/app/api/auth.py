@@ -31,6 +31,7 @@ class ForgotPasswordRequest(BaseModel):
 
 class RegisterResponse(BaseModel):
     email_sent: bool
+    already_exists: bool = False
 
 
 class UserResponse(BaseModel):
@@ -59,6 +60,16 @@ def register(request: RegisterRequest) -> RegisterResponse:
     deliver it. Always returns email_sent=True to prevent account enumeration.
     """
     supabase = get_supabase_client()
+
+    # generate_link silently succeeds for unconfirmed accounts (resends confirmation),
+    # so we must check existence upfront rather than relying on exceptions.
+    try:
+        existing = supabase.auth.admin.list_users()
+        if any(u.email == request.email for u in existing):
+            return RegisterResponse(email_sent=False, already_exists=True)
+    except Exception as e:
+        logger.warning("Could not check existing users for %s: %s", request.email, e)
+
     try:
         link = supabase.auth.admin.generate_link(
             {

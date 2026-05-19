@@ -9,14 +9,16 @@ import { getImpersonatedBAId } from '@/lib/impersonation'
 import { StepWelcome } from './_components/step-welcome'
 import { StepW9 } from './_components/step-w9'
 import { StepDL } from './_components/step-dl'
+import { StepPayPal } from './_components/step-paypal'
 import { StepDone } from './_components/step-done'
 
-type StepKey = 'welcome' | 'w9' | 'dl' | 'done'
+type StepKey = 'welcome' | 'w9' | 'dl' | 'paypal' | 'done'
 
 const STEPS: { key: StepKey; label: string }[] = [
   { key: 'welcome', label: 'Welcome' },
   { key: 'w9', label: 'Tax Info' },
   { key: 'dl', label: 'ID' },
+  { key: 'paypal', label: 'PayPal' },
   { key: 'done', label: 'Done' },
 ]
 
@@ -48,6 +50,8 @@ export default function WelcomePage() {
           setStep('welcome')
         } else if (!status.dl_uploaded) {
           setStep('dl')
+        } else if (!status.payout_submitted) {
+          setStep('paypal')
         }
       } catch {
         // Ignore — welcome step is always safe
@@ -135,6 +139,13 @@ export default function WelcomePage() {
         <StepDL
           accessToken={accessToken}
           onBack={() => setStep('w9')}
+          onSubmitted={() => setStep('paypal')}
+        />
+      )}
+      {step === 'paypal' && (
+        <StepPayPal
+          accessToken={accessToken}
+          onBack={() => setStep('dl')}
           onSubmitted={() => setStep('done')}
         />
       )}

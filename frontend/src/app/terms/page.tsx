@@ -81,7 +81,7 @@ export default async function TermsOfServicePage() {
             <p>
               Subject to these Terms, NMB grants you a limited, revocable, non-exclusive,
               non-transferable, non-sublicensable license to access and use the Service for its
-              intended purpose &mdash; receiving and managing brand-ambassador staffing
+              intended purpose: receiving and managing brand-ambassador staffing
               assignments (for Brand Ambassadors) or administering staffing operations (for
               Administrators). This license terminates automatically if you violate these Terms.
             </p>

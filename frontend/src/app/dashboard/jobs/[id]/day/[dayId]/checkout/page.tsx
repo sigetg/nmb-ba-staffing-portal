@@ -4,13 +4,23 @@ import { useState, useEffect, use } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
-import { Button, Card, CardContent, CardHeader, CardTitle, Alert } from '@/components/ui'
-import { ChevronLeft, MapPin, Camera, Loader2, CheckCircle2 } from 'lucide-react'
+import { Button, Card, CardContent, CardHeader, CardTitle, Alert, Textarea } from '@/components/ui'
+import { ChevronLeft, MapPin, Camera, Loader2, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react'
 import { uploadJobPhoto } from '@/lib/api'
 import { DynamicCheckoutForm, type CheckoutResponseValueData } from '@/components/worker/dynamic-checkout-form'
 import { ContactHelpLine } from '@/components/contact-phone'
 import type { JobType } from '@/types'
 import { getImpersonatedBAId } from '@/lib/impersonation'
+
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371000
+  const phi1 = (lat1 * Math.PI) / 180
+  const phi2 = (lat2 * Math.PI) / 180
+  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180
+  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180
+  const a = Math.sin(deltaPhi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
 
 export default function DayCheckoutPage({ params }: { params: Promise<{ id: string; dayId: string }> }) {
   const { id: jobId, dayId } = use(params)
@@ -28,7 +38,12 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
 
   // GPS + Photo
   const [gpsLocation, setGpsLocation] = useState<{ latitude: number; longitude: number } | null>(null)
+  const [locationCoords, setLocationCoords] = useState<{ latitude: number; longitude: number } | null>(null)
+  const [locationError, setLocationError] = useState<string | null>(null)
   const [isGettingLocation, setIsGettingLocation] = useState(false)
+  const [distance, setDistance] = useState<number | null>(null)
+  const [showGpsOverride, setShowGpsOverride] = useState(false)
+  const [gpsOverrideReason, setGpsOverrideReason] = useState('')
   const [checkoutPhoto, setCheckoutPhoto] = useState<string | null>(null)
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
 
@@ -69,7 +84,6 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
           .single()
 
         if (jt) {
-          // Sort nested data
           if (jt.job_type_kpis) jt.job_type_kpis.sort((a: { sort_order: number }, b: { sort_order: number }) => a.sort_order - b.sort_order)
           if (jt.job_type_questions) {
             jt.job_type_questions.sort((a: { sort_order: number }, b: { sort_order: number }) => a.sort_order - b.sort_order)
@@ -81,7 +95,6 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
         }
       }
 
-      // Find the active check-in for the last location of the day
       const locId = lastLocationId
       if (locId) {
         const { data: ci } = await supabase
@@ -97,6 +110,16 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
           const hrs = ((Date.now() - start) / 3600000).toFixed(1)
           setHoursWorked(hrs)
         }
+
+        // Load location coordinates for distance check
+        const { data: locData } = await supabase
+          .from('job_day_locations')
+          .select('latitude, longitude')
+          .eq('id', locId)
+          .single()
+        if (locData?.latitude && locData?.longitude) {
+          setLocationCoords({ latitude: Number(locData.latitude), longitude: Number(locData.longitude) })
+        }
       }
     } catch {
       setError('Failed to load')
@@ -107,9 +130,18 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
 
   const getLocation = () => {
     setIsGettingLocation(true)
+    setLocationError(null)
     navigator.geolocation.getCurrentPosition(
-      (pos) => { setGpsLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }); setIsGettingLocation(false) },
-      () => { setIsGettingLocation(false) },
+      (pos) => {
+        const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude }
+        setGpsLocation(coords)
+        if (locationCoords) {
+          const dist = calculateDistance(coords.latitude, coords.longitude, locationCoords.latitude, locationCoords.longitude)
+          setDistance(Math.round(dist))
+        }
+        setIsGettingLocation(false)
+      },
+      () => { setLocationError('Unable to get location'); setIsGettingLocation(false) },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     )
   }
@@ -137,15 +169,17 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
     setError(null)
 
     try {
-      // Update check-in record
+      const useOverride = showGpsOverride && !!gpsOverrideReason.trim()
+
       await supabase.from('location_check_ins').update({
         check_out_time: new Date().toISOString(),
         check_out_latitude: gpsLocation.latitude,
         check_out_longitude: gpsLocation.longitude,
         is_end_of_day: true,
+        check_out_gps_override: useOverride,
+        check_out_gps_override_explanation: useOverride ? gpsOverrideReason.trim() : null,
       }).eq('id', checkInId)
 
-      // Insert checkout response
       if (responseValues.length > 0) {
         const { data: resp } = await supabase
           .from('checkout_responses')
@@ -184,6 +218,9 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
     return <div className="flex items-center justify-center min-h-[400px]"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-400" /></div>
   }
 
+  const isWithinRange = distance !== null && distance <= 200
+  const canOverride = distance !== null && distance > 200
+
   return (
     <div className="max-w-lg mx-auto space-y-6 pb-8">
       <div className="flex items-center gap-4">
@@ -208,13 +245,58 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
       {/* GPS */}
       <Card>
         <CardHeader><CardTitle>Checkout Location</CardTitle></CardHeader>
-        <CardContent>
-          {gpsLocation ? (
-            <div className="p-3 bg-green-50 rounded-lg flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-green-600" /><span className="text-sm text-green-800">Location captured</span>
+        <CardContent className="space-y-4">
+          {locationError && <Alert variant="error">{locationError}</Alert>}
+
+          {!gpsLocation ? (
+            <div className="text-center py-4">
+              <p className="text-gray-500 mb-4 text-sm">We need your location to verify you&apos;re at the site.</p>
+              <Button onClick={getLocation} isLoading={isGettingLocation}><MapPin className="w-4 h-4 mr-2" />Get Location</Button>
             </div>
           ) : (
-            <Button onClick={getLocation} isLoading={isGettingLocation}><MapPin className="w-4 h-4 mr-2" />Get Location</Button>
+            <div className="space-y-3">
+              {distance !== null && (
+                <div className={`p-3 rounded-lg ${isWithinRange ? 'bg-green-50' : 'bg-red-50'}`}>
+                  <div className="flex items-center gap-2">
+                    {isWithinRange ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <XCircle className="w-5 h-5 text-red-600" />}
+                    <div>
+                      <p className={`font-medium text-sm ${isWithinRange ? 'text-green-800' : 'text-red-800'}`}>
+                        {isWithinRange ? 'Within range' : 'Too far from location'}
+                      </p>
+                      <p className={`text-xs ${isWithinRange ? 'text-green-700' : 'text-red-700'}`}>
+                        Distance: {distance}m {!isWithinRange && '(max: 200m)'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {canOverride && !showGpsOverride && (
+                <button
+                  type="button"
+                  onClick={() => setShowGpsOverride(true)}
+                  className="flex items-center gap-2 w-full px-4 py-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-300 rounded-lg hover:bg-amber-100"
+                >
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  I&apos;m at the right place, override GPS check
+                </button>
+              )}
+
+              {showGpsOverride && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
+                  <p className="text-sm text-amber-800 font-medium">GPS Override</p>
+                  <p className="text-xs text-amber-700">Please explain why you need to override the GPS check.</p>
+                  <Textarea
+                    value={gpsOverrideReason}
+                    onChange={(e) => setGpsOverrideReason(e.target.value)}
+                    placeholder="e.g., Building entrance is on opposite side..."
+                    rows={2}
+                  />
+                </div>
+              )}
+
+              <Button variant="outline" onClick={getLocation} isLoading={isGettingLocation} className="w-full">Refresh Location</Button>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -232,7 +314,7 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
             <label className="inline-flex items-center gap-2 px-4 py-2 bg-primary-400 text-white rounded-lg hover:bg-primary-500 cursor-pointer">
               {isUploadingPhoto ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
               {isUploadingPhoto ? 'Uploading...' : 'Take Photo'}
-              <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} className="hidden" disabled={isUploadingPhoto} />
+              <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" disabled={isUploadingPhoto} />
             </label>
           )}
         </CardContent>
@@ -251,7 +333,7 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
       <Button
         onClick={handleCheckout}
         isLoading={isSubmitting}
-        disabled={!gpsLocation || !checkoutPhoto}
+        disabled={!gpsLocation || !checkoutPhoto || (!isWithinRange && !(showGpsOverride && gpsOverrideReason.trim()))}
         className="w-full py-4 text-lg"
       >
         <CheckCircle2 className="w-6 h-6 mr-2" />Complete Day

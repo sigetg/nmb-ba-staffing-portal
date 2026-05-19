@@ -3,7 +3,7 @@
 import { FormEvent, useState } from 'react'
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, Select, Alert } from '@/components/ui'
 import { submitW9, type W9SubmitInput } from '@/lib/api'
-import type { EntityType, TinType } from '@/types'
+import type { TinType } from '@/types'
 
 interface Props {
   accessToken: string
@@ -11,18 +11,6 @@ interface Props {
   onBack: () => void
   onSubmitted: () => void
 }
-
-const ENTITY_OPTIONS = [
-  { value: 'individual', label: 'Individual / Sole Proprietor' },
-  { value: 'sole_proprietor', label: 'Sole Proprietor' },
-  { value: 'llc_single', label: 'LLC — Single-member (Disregarded Entity)' },
-  { value: 'llc_partnership', label: 'LLC — Taxed as Partnership' },
-  { value: 'llc_corp', label: 'LLC — Taxed as Corporation' },
-  { value: 'c_corp', label: 'C Corporation' },
-  { value: 's_corp', label: 'S Corporation' },
-  { value: 'partnership', label: 'Partnership' },
-  { value: 'other', label: 'Other' },
-]
 
 const US_STATES = [
   'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS',
@@ -44,8 +32,6 @@ function formatTin(value: string, type: TinType): string {
 
 export function StepW9({ accessToken, initial, onBack, onSubmitted }: Props) {
   const [legalName, setLegalName] = useState(initial?.legal_name || '')
-  const [businessName, setBusinessName] = useState(initial?.business_name || '')
-  const [entityType, setEntityType] = useState<EntityType>((initial?.entity_type as EntityType) || 'individual')
   const [addressLine1, setAddressLine1] = useState(initial?.address_line1 || '')
   const [addressLine2, setAddressLine2] = useState(initial?.address_line2 || '')
   const [city, setCity] = useState(initial?.city || '')
@@ -82,8 +68,8 @@ export function StepW9({ accessToken, initial, onBack, onSubmitted }: Props) {
     try {
       await submitW9(accessToken, {
         legal_name: legalName.trim(),
-        business_name: businessName.trim() || null,
-        entity_type: entityType,
+        business_name: null,
+        entity_type: 'individual',
         address_line1: addressLine1.trim(),
         address_line2: addressLine2.trim() || null,
         city: city.trim(),
@@ -119,19 +105,6 @@ export function StepW9({ accessToken, initial, onBack, onSubmitted }: Props) {
             onChange={e => setLegalName(e.target.value)}
             required
           />
-          <Input
-            label="Business name (if different)"
-            value={businessName}
-            onChange={e => setBusinessName(e.target.value)}
-          />
-          <Select
-            label="Federal tax classification"
-            options={ENTITY_OPTIONS}
-            value={entityType}
-            onChange={e => setEntityType(e.target.value as EntityType)}
-            required
-          />
-
           <div className="pt-2 border-t border-gray-200" />
 
           <Input

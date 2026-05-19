@@ -191,7 +191,7 @@ export default function ReportPreviewPage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-heading">Report Preview</h1>
-            <p className="text-sm text-primary-400">{jobType?.name || 'General'} — {reportData.jobs.length} job{reportData.jobs.length !== 1 ? 's' : ''}, {baCount} BA{baCount !== 1 ? 's' : ''}</p>
+            <p className="text-sm text-primary-400">{jobType?.name || 'General'}: {reportData.jobs.length} job{reportData.jobs.length !== 1 ? 's' : ''}, {baCount} BA{baCount !== 1 ? 's' : ''}</p>
           </div>
         </div>
         <Button
@@ -318,7 +318,7 @@ export default function ReportPreviewPage() {
                     >
                       <div className="text-left">
                         <p className="font-medium text-gray-900">{job.title}</p>
-                        <p className="text-sm text-primary-400">{job.brand} — {jobResponses.length} responses</p>
+                        <p className="text-sm text-primary-400">{job.brand}: {jobResponses.length} responses</p>
                       </div>
                       {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
                     </button>
@@ -389,7 +389,7 @@ export default function ReportPreviewPage() {
                         <div key={i} className="bg-gray-50 rounded-lg p-3">
                           <p className="text-xs font-medium text-primary-400 mb-1">
                             {a.name}
-                            {reportData.jobs.length > 1 && a.jobTitle && <span className="text-gray-400"> — {a.jobTitle}</span>}
+                            {reportData.jobs.length > 1 && a.jobTitle && <span className="text-gray-400">, {a.jobTitle}</span>}
                           </p>
                           <p className="text-sm text-gray-700">{a.text}</p>
                         </div>
