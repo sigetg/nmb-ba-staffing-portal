@@ -2,7 +2,9 @@ import logging
 import re
 import time
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+import httpx
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 
 from app.core.auth import CurrentUser, get_current_admin, get_current_ba, get_current_user
 from app.core.supabase import get_supabase_client
@@ -230,3 +232,33 @@ async def delete_job_worksheet(
     supabase.table("jobs").update({"worksheet_url": None}).eq("id", job_id).execute()
 
     return {"ok": True}
+
+
+# --- Proxy download (hides Dropbox URLs from users) ---
+
+
+@router.get("/proxy-download")
+async def proxy_download(
+    url: str = Query(...),
+    filename: str = Query(default="download"),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """Fetch a file from Dropbox server-side and stream it to the client as an attachment."""
+    if not url.startswith("https://www.dropbox.com/"):
+        raise HTTPException(status_code=400, detail="Invalid URL")
+
+    async with httpx.AsyncClient(follow_redirects=True) as client:
+        resp = await client.get(url)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="Failed to fetch file")
+
+        content_type = resp.headers.get("content-type", "application/octet-stream").split(";")[0]
+
+        async def stream():
+            yield resp.content
+
+        return StreamingResponse(
+            stream(),
+            media_type=content_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
