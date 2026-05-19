@@ -87,7 +87,7 @@ function ConfirmInner() {
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-primary-400">Hold on — verifying your link.</p>
+              <p className="text-sm text-primary-400">Hold on, verifying your link.</p>
             )}
           </CardContent>
         </Card>

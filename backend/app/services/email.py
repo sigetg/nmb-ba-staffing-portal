@@ -290,8 +290,17 @@ def send_application_approved_email(
     start_time: str,
     job_id: str,
     notes: str | None = None,
+    job_description: str | None = None,
 ) -> bool:
     first = _first_name(name)
+    description_block = (
+        f"""<div style="margin: 16px 0;">
+        <p style="margin: 0 0 6px 0; color: #1a1a1a; font-weight: bold;">Job Description</p>
+        <p style="margin: 0; color: #4a4a4a; line-height: 1.6;">{job_description}</p>
+    </div>"""
+        if job_description
+        else ""
+    )
     body = f"""
     <h2 style="color: #1a1a1a; margin-top: 0;">Great news, {first}!</h2>
     <p style="color: #4a4a4a; line-height: 1.6;">
@@ -303,9 +312,25 @@ def send_application_approved_email(
         <p style="margin: 4px 0; color: #4a4a4a;"><strong>Start Time:</strong> {start_time}</p>
         <p style="margin: 4px 0; color: #4a4a4a;"><strong>Location:</strong> {job_location}</p>
     </div>
+    {description_block}
     {_notes_block(notes)}
+    <div style="margin: 24px 0;">
+        <p style="color: #1a1a1a; font-weight: bold; margin: 0 0 12px 0;">How to use the portal for this job:</p>
+        <p style="color: #4a4a4a; line-height: 1.6; margin: 0 0 10px 0;">
+            <strong>1. Check in when you arrive.</strong><br/>
+            Open the portal and go to this job. When you reach the location, tap "Check In" to log your arrival time and GPS location. This is how we track your hours, so please do not skip this step.
+        </p>
+        <p style="color: #4a4a4a; line-height: 1.6; margin: 0 0 10px 0;">
+            <strong>2. Document the job with photos.</strong><br/>
+            While on location, you will need to upload photos in several required categories through the portal, including setup shots, customer engagement, storefront and signage, and team uniform compliance. The portal shows the minimum number of photos needed for each category. To upload, tap the Upload button in the Documentation Requirements section, select a category, and either take a new photo or choose one from your camera roll.
+        </p>
+        <p style="color: #4a4a4a; line-height: 1.6; margin: 0;">
+            <strong>3. Check out when you leave.</strong><br/>
+            When your shift is done, tap "Check Out" (or "Depart" if you have multiple locations). Your hours and documentation will be submitted automatically.
+        </p>
+    </div>
     <p style="color: #4a4a4a; line-height: 1.6;">
-        Please make sure to arrive on time and check in when you get there.
+        Please make sure to arrive on time. If you have any questions, reply to this email.
     </p>
     {_cta_button("View Job Details", f"/dashboard/jobs/{job_id}")}
     """

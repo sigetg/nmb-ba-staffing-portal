@@ -457,5 +457,5 @@ async def get_onboarding_status(
         w9_submitted=w9,
         dl_uploaded=dl,
         payout_submitted=payout,
-        onboarding_complete=w9 and dl,
+        onboarding_complete=w9 and dl and payout,
     )

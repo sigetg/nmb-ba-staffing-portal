@@ -19,8 +19,8 @@ export function StepWelcome({ onNext }: { onNext: () => void }) {
             Before you can apply for jobs, we need a couple of details so we can pay you correctly:
           </p>
           <ul className="text-left text-primary-400 space-y-2 mb-8">
-            <li>• <span className="font-medium">Tax info (W-9)</span> — required for any 1099 contractor</li>
-            <li>• <span className="font-medium">Payout method</span> — direct deposit (ACH) or PayPal</li>
+            <li>• <span className="font-medium">Tax info (W-9)</span>: required for any 1099 contractor</li>
+            <li>• <span className="font-medium">Payout method</span>: direct deposit (ACH) or PayPal</li>
           </ul>
           <p className="text-sm text-gray-500 mb-6">
             Takes about 2 minutes. Your information is encrypted and only visible to you and our admin team.

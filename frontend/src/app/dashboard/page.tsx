@@ -198,7 +198,7 @@ export default async function DashboardPage() {
         <PersistentBanner
           variant="warning"
           title="Connect PayPal to receive your earnings"
-          message="You've completed a job — add your PayPal so we can pay you."
+          message="You've completed a job. Add your PayPal so we can pay you."
           ctaLabel="Connect PayPal"
           ctaHref="/dashboard/profile#payout"
         />

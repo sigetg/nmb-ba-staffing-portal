@@ -7,7 +7,6 @@ import { Button, Input, Card, CardContent, CardHeader, CardTitle, Alert, Badge, 
 import { ImagePlus, FileText } from 'lucide-react'
 import type { BAProfile, BAPhoto } from '@/types'
 import { getImpersonatedBAId } from '@/lib/impersonation'
-import { TaxDocumentsCard } from '@/components/dashboard/tax-documents-card'
 import { PayoutMethodCard } from '@/components/dashboard/payout-method-card'
 
 const daysOfWeek = [
@@ -225,12 +224,12 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      {/* Tax Documents */}
-      <TaxDocumentsCard />
-
-      {/* Payout Method (PayPal) — gated until live PayPal credentials are approved.
-          Flip NEXT_PUBLIC_PAYOUT_PROMPT_ENABLED=true on Railway frontend to enable. */}
-      {process.env.NEXT_PUBLIC_PAYOUT_PROMPT_ENABLED === 'true' && <PayoutMethodCard />}
+      {/* Payout Method — only shown once W-9 + DL onboarding steps are complete */}
+      {process.env.NEXT_PUBLIC_PAYOUT_PROMPT_ENABLED === 'true' &&
+        profile.w9_submitted_at &&
+        profile.dl_uploaded_at && (
+          <PayoutMethodCard />
+        )}
 
       {/* Profile Details */}
       <Card>

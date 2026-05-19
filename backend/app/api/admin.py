@@ -220,7 +220,7 @@ async def assign_bas_to_job(
     job = (
         supabase.table("jobs")
         .select(
-            "slots, slots_filled, title, job_days(date, job_day_locations(location, start_time))"
+            "slots, slots_filled, title, description, job_days(date, job_day_locations(location, start_time))"
         )
         .eq("id", job_id)
         .single()
@@ -267,6 +267,7 @@ async def assign_bas_to_job(
                     job_location=info["location"],
                     start_time=info["start_time"],
                     job_id=job_id,
+                    job_description=job.data.get("description"),
                 )
 
     # Update slots_filled
@@ -367,7 +368,7 @@ async def update_application_status(
     application = (
         supabase.table("job_applications")
         .select(
-            "id, status, job_id, ba_id, jobs(id, title, slots_filled, job_days(date, job_day_locations(location, start_time))), ba_profiles(id, name, user_id)"
+            "id, status, job_id, ba_id, jobs(id, title, description, slots_filled, job_days(date, job_day_locations(location, start_time))), ba_profiles(id, name, user_id)"
         )
         .eq("id", application_id)
         .single()
@@ -419,6 +420,7 @@ async def update_application_status(
                 start_time=info["start_time"],
                 job_id=job_data["id"],
                 notes=body.notes,
+                job_description=job_data.get("description"),
             )
         elif body.status == "rejected":
             send_application_rejected_email(

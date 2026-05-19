@@ -195,7 +195,12 @@ export default function LocationActivePage({ params }: { params: Promise<{ id: s
 
       {/* Photo Documentation */}
       <Card>
-        <CardHeader><CardTitle>Documentation Requirements</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Documentation Requirements</CardTitle>
+          <p className="text-sm text-gray-500 mt-1">
+            Take and upload photos throughout your shift to document your work. Select a category from the dropdown, then tap Upload to take a new photo or choose one from your camera roll. Green checkmarks show which requirements you have met. All categories must be complete before you can check out.
+          </p>
+        </CardHeader>
         <CardContent className="space-y-4">
           {/* Upload control */}
           <div className="flex items-center gap-3">
@@ -211,7 +216,7 @@ export default function LocationActivePage({ params }: { params: Promise<{ id: s
               <label className="inline-flex items-center gap-2 px-3 py-2 bg-primary-400 text-white rounded-lg hover:bg-primary-500 cursor-pointer text-sm">
                 {isUploadingPhoto ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
                 {isUploadingPhoto ? 'Uploading' : 'Upload'}
-                <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} className="hidden" disabled={isUploadingPhoto} />
+                <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" disabled={isUploadingPhoto} />
               </label>
             </div>
           </div>

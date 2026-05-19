@@ -12,6 +12,7 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [emailSent, setEmailSent] = useState(false)
+  const [alreadyExists, setAlreadyExists] = useState(false)
 
   const validateForm = () => {
     if (!email.trim()) {
@@ -53,6 +54,11 @@ export default function RegisterPage() {
         return
       }
 
+      const data = await res.json()
+      if (data.already_exists) {
+        setAlreadyExists(true)
+        return
+      }
       setEmailSent(true)
     } catch {
       setError('An unexpected error occurred. Please try again.')
@@ -82,10 +88,32 @@ export default function RegisterPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>{emailSent ? 'Check Your Email' : 'Register'}</CardTitle>
+            <CardTitle>{alreadyExists ? 'Account Already Exists' : emailSent ? 'Check Your Email' : 'Register'}</CardTitle>
           </CardHeader>
           <CardContent>
-            {emailSent ? (
+            {alreadyExists ? (
+              <div className="space-y-4">
+                <Alert variant="error">
+                  An account already exists for <strong>{email}</strong>.
+                </Alert>
+                <p className="text-sm text-primary-400 text-center">
+                  Please sign in with that email, or apply with a different email address.
+                </p>
+                <div className="flex flex-col gap-2">
+                  <Link href="/" className="block">
+                    <button className="w-full py-2 px-4 bg-primary-400 text-white rounded-lg text-sm font-medium hover:bg-primary-500 transition-colors">
+                      Sign In
+                    </button>
+                  </Link>
+                  <button
+                    onClick={() => { setAlreadyExists(false); setEmail(''); setPassword(''); setConfirmPassword('') }}
+                    className="w-full py-2 px-4 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    Use a different email
+                  </button>
+                </div>
+              </div>
+            ) : emailSent ? (
               <div className="space-y-4">
                 <Alert variant="success">
                   We&apos;ve sent a confirmation link to <strong>{email}</strong>. Please check your email and click the link to activate your account.

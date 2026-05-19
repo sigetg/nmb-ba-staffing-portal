@@ -164,7 +164,7 @@ export default function Home() {
             </h1>
             <div className="mt-4 space-y-2 text-primary-400">
               <p className="text-lg font-medium">
-                Welcome — you&apos;ve made it!
+                Welcome! You&apos;ve made it!
                 <br />
                 Now it&apos;s time to shine.
               </p>

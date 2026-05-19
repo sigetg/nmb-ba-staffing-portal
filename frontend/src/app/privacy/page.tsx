@@ -80,7 +80,7 @@ export default async function PrivacyPolicyPage() {
               </li>
               <li>
                 <strong>Tax and payment information:</strong> the data needed to issue payment and
-                meet IRS reporting obligations &mdash; legal name, address, taxpayer
+                meet IRS reporting obligations: legal name, address, taxpayer
                 identification number (SSN, EIN, or ITIN) collected on a Form W-9, and PayPal
                 payout email or other payout details. Tax IDs are encrypted at rest.
               </li>
@@ -195,7 +195,7 @@ export default async function PrivacyPolicyPage() {
                 and Intuit QuickBooks (accounting sync).
               </li>
               <li>
-                <strong>Clients of NMB Media</strong> &mdash; only the limited details required
+                <strong>Clients of NMB Media</strong>: only the limited details required
                 for a client to verify staffing for their event (e.g., assigned BA name, photo,
                 check-in confirmation).
               </li>
