@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 // Routes that don't require authentication
-const publicRoutes = ['/', '/auth/login', '/auth/register', '/auth/setup', '/auth/callback', '/auth/confirm', '/auth/forgot-password', '/auth/reset-password', '/admin/login', '/health', '/privacy', '/terms']
+const publicRoutes = ['/', '/auth/login', '/auth/register', '/auth/setup', '/auth/callback', '/auth/confirm', '/auth/forgot-password', '/auth/reset-password', '/auth/reset', '/admin/login', '/health', '/privacy', '/terms']
 
 // Routes that require admin role (used for future role-based routing)
 const _adminRoutes = ['/admin']
@@ -10,7 +10,29 @@ const _adminRoutes = ['/admin']
 // Routes that require BA role (used for future role-based routing)
 const _baRoutes = ['/dashboard']
 
+/**
+ * Build a redirect response with cache headers that prevent Railway's edge
+ * (or any intermediary) from caching an authenticated-user redirect and
+ * serving it back to a different cookie state. Every redirect out of this
+ * middleware must go through here.
+ */
+function buildRedirect(request: NextRequest, to: string) {
+  const res = NextResponse.redirect(new URL(to, request.url))
+  res.headers.set('cache-control', 'private, no-store')
+  res.headers.set('vary', 'cookie')
+  return res
+}
+
 export async function updateSession(request: NextRequest) {
+  const pathname = request.nextUrl.pathname
+
+  // /auth/reset is the server route that wipes Supabase session cookies.
+  // It must not be re-auth-gated or its Set-Cookie clearing response would
+  // be swallowed by a middleware redirect, leaving the user looped.
+  if (pathname === '/auth/reset') {
+    return NextResponse.next({ request })
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   })
@@ -55,32 +77,6 @@ export async function updateSession(request: NextRequest) {
   const errorCode = (error as { code?: string } | null | undefined)?.code
   const isTransientRefresh = errorCode === 'refresh_token_already_used'
 
-  // Track consecutive transient-refresh failures so we can recover users whose
-  // refresh token is permanently revoked (e.g., consumed by a parallel request
-  // that committed cookies first, leaving this browser with a forever-stale
-  // token). Without this, the loop becomes: middleware treats user as
-  // transient-authenticated → redirects to /dashboard → server-component
-  // getUser also fails → layout redirects to / → repeat. After a few hits we
-  // force-clear the supabase auth cookies so the user lands on the login page.
-  const TRANSIENT_COUNT_COOKIE = '_auth_t'
-  const TRANSIENT_LIMIT = 3
-  const priorTransientCount = parseInt(
-    request.cookies.get(TRANSIENT_COUNT_COOKIE)?.value || '0',
-    10
-  )
-
-  if (isTransientRefresh && priorTransientCount >= TRANSIENT_LIMIT) {
-    // Stuck: nuke the supabase auth cookies and bounce to the login page.
-    const reset = NextResponse.redirect(new URL('/', request.url))
-    for (const c of request.cookies.getAll()) {
-      if (c.name.startsWith('sb-')) {
-        reset.cookies.set(c.name, '', { path: '/', maxAge: 0 })
-      }
-    }
-    reset.cookies.set(TRANSIENT_COUNT_COOKIE, '', { path: '/', maxAge: 0 })
-    return reset
-  }
-
   if (isTransientRefresh) {
     // Restore the request cookies (setAll mutated them) and rebuild a
     // clean response without the cleared-cookie headers.
@@ -93,22 +89,10 @@ export async function updateSession(request: NextRequest) {
       request.cookies.set(c.name, c.value)
     }
     supabaseResponse = NextResponse.next({ request })
-    // Increment the counter; short TTL so it self-clears once the user
-    // navigates past the race condition.
-    supabaseResponse.cookies.set(
-      TRANSIENT_COUNT_COOKIE,
-      String(priorTransientCount + 1),
-      { path: '/', httpOnly: true, sameSite: 'lax', maxAge: 120 }
-    )
-  } else if (priorTransientCount > 0) {
-    // Auth state resolved (success or genuine logout) — reset the counter.
-    supabaseResponse.cookies.set(TRANSIENT_COUNT_COOKIE, '', { path: '/', maxAge: 0 })
   }
 
   // For routing purposes, treat transient-refresh users as logged in.
   const isAuthenticated = !!user || isTransientRefresh
-
-  const pathname = request.nextUrl.pathname
 
   // Check if route is public
   const isPublicRoute = publicRoutes.some(
@@ -132,7 +116,7 @@ export async function updateSession(request: NextRequest) {
           .single()
         redirectUrl = userData?.role === 'admin' ? '/admin/dashboard' : '/dashboard'
       }
-      return NextResponse.redirect(new URL(redirectUrl, request.url))
+      return buildRedirect(request, redirectUrl)
     }
     return supabaseResponse
   }
@@ -142,7 +126,10 @@ export async function updateSession(request: NextRequest) {
     // Redirect unauthenticated users to the unified home page login
     const redirectUrl = new URL('/', request.url)
     redirectUrl.searchParams.set('redirect', pathname)
-    return NextResponse.redirect(redirectUrl)
+    const res = NextResponse.redirect(redirectUrl)
+    res.headers.set('cache-control', 'private, no-store')
+    res.headers.set('vary', 'cookie')
+    return res
   }
 
   // If impersonation cookie is present on /dashboard routes, verify user is admin
@@ -156,8 +143,9 @@ export async function updateSession(request: NextRequest) {
 
     if (userData?.role !== 'admin') {
       // Not admin — delete the cookie and redirect
-      supabaseResponse.cookies.delete('impersonate_ba_id')
-      return NextResponse.redirect(new URL('/', request.url))
+      const res = buildRedirect(request, '/')
+      res.cookies.set('impersonate_ba_id', '', { path: '/', maxAge: 0 })
+      return res
     }
   }
 

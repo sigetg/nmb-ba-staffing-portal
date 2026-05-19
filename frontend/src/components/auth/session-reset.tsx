@@ -5,27 +5,15 @@ import Link from 'next/link'
 
 /**
  * Rendered by server layouts when auth state can't be loaded (null user
- * despite middleware letting the request through). Instead of redirecting —
- * which would loop against middleware that still sees auth cookies — we
- * render this and let the BROWSER clear every `sb-*` cookie and navigate
- * to `/`. The next request has no auth, so middleware renders the login
- * page and the loop is broken.
+ * despite middleware letting the request through). Bounces the browser to
+ * `/auth/reset`, which is a server route that clears every Supabase
+ * session cookie and redirects to `/`. We can't reliably clear cookies
+ * from JS (Chrome rejects `document.cookie` overwrites that don't match
+ * the original `Secure` attribute), so we delegate to the server.
  */
 export function SessionReset() {
   useEffect(() => {
-    const host = window.location.hostname
-    // Match the path/domain attributes supabase-js used when setting cookies.
-    // Try a few variants so we hit them regardless of how they were set.
-    const expire = 'Thu, 01 Jan 1970 00:00:00 GMT'
-    for (const c of document.cookie.split(';')) {
-      const name = c.split('=')[0]?.trim()
-      if (!name || !name.startsWith('sb-')) continue
-      document.cookie = `${name}=; Path=/; Expires=${expire}; SameSite=Lax`
-      document.cookie = `${name}=; Path=/; Domain=${host}; Expires=${expire}; SameSite=Lax`
-      // Also try a leading-dot domain in case it was set that way.
-      document.cookie = `${name}=; Path=/; Domain=.${host}; Expires=${expire}; SameSite=Lax`
-    }
-    window.location.replace('/')
+    window.location.replace('/auth/reset')
   }, [])
 
   return (
@@ -34,7 +22,7 @@ export function SessionReset() {
         <p className="text-gray-600">Resetting your session…</p>
         <p className="mt-2 text-xs text-gray-400">
           If this page doesn’t move,{' '}
-          <Link href="/" className="underline">click here</Link>.
+          <Link href="/auth/reset" className="underline">click here</Link>.
         </p>
       </div>
     </div>
