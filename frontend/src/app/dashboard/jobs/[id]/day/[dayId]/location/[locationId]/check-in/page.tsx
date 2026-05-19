@@ -322,7 +322,7 @@ export default function LocationCheckInPage({ params }: { params: Promise<{ id: 
               <label className="inline-flex items-center gap-2 px-4 py-2 bg-primary-400 text-white rounded-lg hover:bg-primary-500 cursor-pointer">
                 {isUploadingPhoto ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-5 h-5" />}
                 {isUploadingPhoto ? 'Uploading...' : 'Take Photo'}
-                <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" disabled={isUploadingPhoto || !profileId} />
+                <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} className="hidden" disabled={isUploadingPhoto || !profileId} />
               </label>
             </div>
           )}

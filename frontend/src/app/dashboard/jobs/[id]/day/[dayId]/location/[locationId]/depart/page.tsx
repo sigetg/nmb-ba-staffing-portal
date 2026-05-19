@@ -208,7 +208,7 @@ export default function DepartLocationPage({ params }: { params: Promise<{ id: s
               <label className="inline-flex items-center gap-2 px-4 py-2 bg-primary-400 text-white rounded-lg hover:bg-primary-500 cursor-pointer">
                 {isUploadingPhoto ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
                 {isUploadingPhoto ? 'Uploading...' : 'Take Photo'}
-                <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" disabled={isUploadingPhoto} />
+                <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} className="hidden" disabled={isUploadingPhoto} />
               </label>
             </div>
           )}
