@@ -28,8 +28,8 @@ async function getMyJobs(userId: string, impersonatedBAId?: string) {
   const supabase = await createClient()
 
   const profileQuery = impersonatedBAId
-    ? supabase.from('ba_profiles').select('id').eq('id', impersonatedBAId).single()
-    : supabase.from('ba_profiles').select('id').eq('user_id', userId).single()
+    ? supabase.from('ba_profiles').select('id').eq('id', impersonatedBAId).maybeSingle()
+    : supabase.from('ba_profiles').select('id').eq('user_id', userId).maybeSingle()
   const { data: profile } = await profileQuery
 
   if (!profile) {

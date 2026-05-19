@@ -12,8 +12,8 @@ async function getAvailableJobs(userId: string, impersonatedBAId?: string) {
 
   // Get BA profile (include lat/lng for distance sorting)
   const profileQuery = impersonatedBAId
-    ? supabase.from('ba_profiles').select('id, status, latitude, longitude').eq('id', impersonatedBAId).single()
-    : supabase.from('ba_profiles').select('id, status, latitude, longitude').eq('user_id', userId).single()
+    ? supabase.from('ba_profiles').select('id, status, latitude, longitude').eq('id', impersonatedBAId).maybeSingle()
+    : supabase.from('ba_profiles').select('id, status, latitude, longitude').eq('user_id', userId).maybeSingle()
   const { data: profile } = await profileQuery
 
   // Get published jobs with their days/locations

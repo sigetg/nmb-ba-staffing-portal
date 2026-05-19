@@ -90,7 +90,7 @@ export default function SetupPage() {
         .from('ba_profiles')
         .select('id')
         .eq('user_id', session.user.id)
-        .single()
+        .maybeSingle()
 
       if (profile) {
         router.push('/dashboard')

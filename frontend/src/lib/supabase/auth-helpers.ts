@@ -33,7 +33,7 @@ export const getBAUserWithProfile = cache(async () => {
     .from('ba_profiles')
     .select('*')
     .eq('user_id', result.user.id)
-    .single()
+    .maybeSingle()
   return { ...result, profile }
 })
 

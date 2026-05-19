@@ -64,8 +64,8 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
 
       const impersonatedId = getImpersonatedBAId()
       const { data: profile } = await (impersonatedId
-        ? supabase.from('ba_profiles').select('id').eq('id', impersonatedId).single()
-        : supabase.from('ba_profiles').select('id').eq('user_id', user.id).single())
+        ? supabase.from('ba_profiles').select('id').eq('id', impersonatedId).maybeSingle()
+        : supabase.from('ba_profiles').select('id').eq('user_id', user.id).maybeSingle())
       if (!profile) return
       setProfileId(profile.id)
 
