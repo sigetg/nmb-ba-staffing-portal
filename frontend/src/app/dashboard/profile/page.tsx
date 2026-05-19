@@ -52,8 +52,8 @@ export default function ProfilePage() {
 
       const impersonatedId = getImpersonatedBAId()
       const profileQuery = impersonatedId
-        ? supabase.from('ba_profiles').select('*, users(email)').eq('id', impersonatedId).single()
-        : supabase.from('ba_profiles').select('*, users(email)').eq('user_id', user.id).single()
+        ? supabase.from('ba_profiles').select('*, users(email)').eq('id', impersonatedId).maybeSingle()
+        : supabase.from('ba_profiles').select('*, users(email)').eq('user_id', user.id).maybeSingle()
       const { data: profileData, error: profileError } = await profileQuery
 
       if (profileError || !profileData) {

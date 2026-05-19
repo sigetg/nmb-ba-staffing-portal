@@ -68,8 +68,8 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       // Load profile (check impersonation first)
       const impersonatedId = getImpersonatedBAId()
       const profileQuery = impersonatedId
-        ? supabase.from('ba_profiles').select('*').eq('id', impersonatedId).single()
-        : supabase.from('ba_profiles').select('*').eq('user_id', user.id).single()
+        ? supabase.from('ba_profiles').select('*').eq('id', impersonatedId).maybeSingle()
+        : supabase.from('ba_profiles').select('*').eq('user_id', user.id).maybeSingle()
       const { data: profileData } = await profileQuery
 
       setProfile(profileData)

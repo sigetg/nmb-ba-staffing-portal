@@ -20,8 +20,8 @@ export default function CheckOutPage({ params }: { params: Promise<{ id: string 
 
       const impersonatedId = getImpersonatedBAId()
       const { data: profile } = await (impersonatedId
-        ? supabase.from('ba_profiles').select('id').eq('id', impersonatedId).single()
-        : supabase.from('ba_profiles').select('id').eq('user_id', user.id).single())
+        ? supabase.from('ba_profiles').select('id').eq('id', impersonatedId).maybeSingle()
+        : supabase.from('ba_profiles').select('id').eq('user_id', user.id).maybeSingle())
 
       if (!profile) { errorRef.current = 'Profile not found'; loadedRef.current = true; return }
 
