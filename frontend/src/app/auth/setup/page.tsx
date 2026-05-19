@@ -497,9 +497,26 @@ export default function SetupPage() {
             {/* Step 5: Availability */}
             {step === 'availability' && (
               <form onSubmit={handleFinalSubmit} className="space-y-4">
-                <p className="text-sm text-primary-400 mb-4">
-                  Select when you&apos;re available to work:
-                </p>
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-sm text-primary-400">Select when you&apos;re available to work:</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allSelected = daysOfWeek.every(d =>
+                        (['morning', 'afternoon', 'evening'] as const).every(p => availability[d][p])
+                      )
+                      const newVal = !allSelected
+                      setAvailability(Object.fromEntries(
+                        daysOfWeek.map(d => [d, { morning: newVal, afternoon: newVal, evening: newVal }])
+                      ))
+                    }}
+                    className="text-xs text-primary-500 hover:text-primary-700 underline"
+                  >
+                    {daysOfWeek.every(d => (['morning', 'afternoon', 'evening'] as const).every(p => availability[d][p]))
+                      ? 'Clear All'
+                      : 'Select All'}
+                  </button>
+                </div>
 
                 <div className="space-y-3">
                   {daysOfWeek.map((day) => (
