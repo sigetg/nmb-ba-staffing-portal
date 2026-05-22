@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { User, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { Button, Input, Card, CardContent, CardHeader, CardTitle, Alert, Select, MultiSelectSearch, Textarea } from '@/components/ui'
+import { Button, Input, Card, CardContent, CardHeader, CardTitle, Alert, Select, MultiSelectSearch, Textarea, AddressFields, type AddressFieldsValue } from '@/components/ui'
 import { uploadBAPhoto, uploadBAResume } from '@/lib/api'
 
 type Step = 'basic' | 'photos' | 'resume' | 'details' | 'availability'
@@ -47,7 +47,13 @@ export default function SetupPage() {
   // Step 1 - Basic Info
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
-  const [zipCode, setZipCode] = useState('')
+  const [address, setAddress] = useState<AddressFieldsValue>({
+    street_address1: '',
+    street_address2: '',
+    city: '',
+    state: '',
+    zip_code: '',
+  })
 
   // Step 2 - Photos
   const [headshotFile, setHeadshotFile] = useState<File | null>(null)
@@ -154,7 +160,10 @@ export default function SetupPage() {
     if (step === 'basic') {
       if (!name.trim()) { setError('Name is required'); return }
       if (!phone.trim()) { setError('Phone number is required'); return }
-      if (!zipCode.trim() || zipCode.length !== 5) { setError('Please enter a valid 5-digit zip code'); return }
+      if (!address.street_address1.trim()) { setError('Street address is required'); return }
+      if (!address.city.trim()) { setError('City is required'); return }
+      if (!address.state.trim() || address.state.length !== 2) { setError('Please select a state'); return }
+      if (!address.zip_code.trim() || address.zip_code.length < 5) { setError('Please enter a valid ZIP code'); return }
       setStep('photos')
     } else if (step === 'photos') {
       if (!headshotFile) { setError('Headshot photo is required'); return }
@@ -204,20 +213,23 @@ export default function SetupPage() {
       // 4. Geocode zip code (best-effort)
       let latitude: number | null = null
       let longitude: number | null = null
-      try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-        const { data: { session } } = await supabase.auth.getSession()
-        const geoRes = await fetch(`${apiUrl}/api/bas/geocode-zip?zip_code=${zipCode.trim()}`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${session?.access_token}` },
-        })
-        if (geoRes.ok) {
-          const geo = await geoRes.json()
-          latitude = geo.latitude
-          longitude = geo.longitude
+      const zipForGeocode = address.zip_code.trim().slice(0, 5)
+      if (zipForGeocode.length === 5) {
+        try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+          const { data: { session } } = await supabase.auth.getSession()
+          const geoRes = await fetch(`${apiUrl}/api/bas/geocode-zip?zip_code=${zipForGeocode}`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${session?.access_token}` },
+          })
+          if (geoRes.ok) {
+            const geo = await geoRes.json()
+            latitude = geo.latitude
+            longitude = geo.longitude
+          }
+        } catch {
+          // Geocoding failure is non-blocking
         }
-      } catch {
-        // Geocoding failure is non-blocking
       }
 
       // 5. Create ba_profiles row
@@ -227,7 +239,11 @@ export default function SetupPage() {
           user_id: userId,
           name: name.trim(),
           phone: phone.trim(),
-          zip_code: zipCode.trim(),
+          zip_code: address.zip_code.trim(),
+          street_address1: address.street_address1.trim() || null,
+          street_address2: address.street_address2.trim() || null,
+          city: address.city.trim() || null,
+          state: address.state.trim().toUpperCase() || null,
           status: 'pending',
           availability,
           languages,
@@ -328,17 +344,9 @@ export default function SetupPage() {
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="(555) 123-4567"
                 />
-                <div>
-                  <Input
-                    label="Work Area ZIP Code"
-                    type="text"
-                    name="zipCode"
-                    value={zipCode}
-                    onChange={(e) => setZipCode(e.target.value.replace(/\D/g, '').slice(0, 5))}
-                    placeholder="12345"
-                    maxLength={5}
-                  />
-                  <p className="text-xs text-primary-400 mt-1">Enter the ZIP code where you&apos;d like to find work</p>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-gray-700">Home Address</p>
+                  <AddressFields value={address} onChange={setAddress} />
                 </div>
                 <Button type="submit" className="w-full">Continue</Button>
               </form>

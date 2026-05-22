@@ -7,12 +7,15 @@ import type { BadgeVariant } from '@/components/ui'
 import { Users, ChevronUp, ChevronDown, ArrowUpDown, Eye } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { startImpersonation } from '@/lib/actions/impersonation'
+import { US_STATES } from '@/lib/us-states'
 
 interface BA {
   id: string
   name: string
   phone: string
   zip_code: string
+  city?: string | null
+  state?: string | null
   status: string
   created_at: string
   ba_photos: { url: string; photo_type: string }[]
@@ -21,7 +24,7 @@ interface BA {
   payout_info_submitted_at?: string | null
 }
 
-type SortColumn = 'name' | 'joined' | 'status'
+type SortColumn = 'name' | 'joined' | 'status' | 'city' | 'state'
 type SortDirection = 'asc' | 'desc'
 
 interface BAsTableProps {
@@ -61,6 +64,12 @@ function compareBAs(a: BA, b: BA, column: SortColumn, direction: SortDirection):
     case 'status':
       cmp = (BA_STATUS_ORDER[a.status] ?? 99) - (BA_STATUS_ORDER[b.status] ?? 99)
       break
+    case 'city':
+      cmp = (a.city || '').localeCompare(b.city || '')
+      break
+    case 'state':
+      cmp = (a.state || '').localeCompare(b.state || '')
+      break
   }
   return direction === 'asc' ? cmp : -cmp
 }
@@ -78,6 +87,7 @@ export function BAsTable({ bas }: BAsTableProps) {
   const router = useRouter()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [stateFilter, setStateFilter] = useState('')
   const [sortColumn, setSortColumn] = useState<SortColumn | null>(null)
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 
@@ -102,12 +112,17 @@ export function BAsTable({ bas }: BAsTableProps) {
       result = result.filter(ba => ba.status === statusFilter)
     }
 
+    if (stateFilter) {
+      result = result.filter(ba => (ba.state || '').toUpperCase() === stateFilter)
+    }
+
     if (search) {
       const q = search.toLowerCase()
       result = result.filter(ba =>
         ba.name.toLowerCase().includes(q) ||
         (ba.users?.email || '').toLowerCase().includes(q) ||
-        (ba.zip_code || '').includes(q)
+        (ba.zip_code || '').includes(q) ||
+        (ba.city || '').toLowerCase().includes(q)
       )
     }
 
@@ -116,7 +131,7 @@ export function BAsTable({ bas }: BAsTableProps) {
     }
 
     return result
-  }, [bas, statusFilter, search, sortColumn, sortDirection])
+  }, [bas, statusFilter, stateFilter, search, sortColumn, sortDirection])
 
   const headerClass = 'text-left py-3 px-4 text-xs font-semibold uppercase tracking-wider text-white whitespace-nowrap cursor-pointer select-none hover:text-primary-100 transition-colors'
   const headerStatic = 'text-left py-3 px-4 text-xs font-semibold uppercase tracking-wider text-white whitespace-nowrap'
@@ -129,7 +144,7 @@ export function BAsTable({ bas }: BAsTableProps) {
           <div className="flex flex-wrap gap-4">
             <input
               type="text"
-              placeholder="Search name, email, or ZIP..."
+              placeholder="Search name, email, city, or ZIP..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm flex-1 min-w-[200px]"
@@ -144,6 +159,16 @@ export function BAsTable({ bas }: BAsTableProps) {
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
               <option value="suspended">Suspended</option>
+            </select>
+            <select
+              value={stateFilter}
+              onChange={e => setStateFilter(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm"
+            >
+              <option value="">All States</option>
+              {US_STATES.map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
             </select>
           </div>
         </CardContent>
@@ -171,6 +196,12 @@ export function BAsTable({ bas }: BAsTableProps) {
                     </th>
                     <th className={headerStatic}>Phone</th>
                     <th className={headerStatic}>Email</th>
+                    <th className={headerClass} onClick={() => handleSort('city')}>
+                      City <SortIcon column="city" activeColumn={sortColumn} direction={sortDirection} />
+                    </th>
+                    <th className={headerClass} onClick={() => handleSort('state')}>
+                      State <SortIcon column="state" activeColumn={sortColumn} direction={sortDirection} />
+                    </th>
                     <th className={headerStatic}>ZIP Code</th>
                     <th className={headerClass} onClick={() => handleSort('joined')}>
                       Joined <SortIcon column="joined" activeColumn={sortColumn} direction={sortDirection} />
@@ -211,6 +242,12 @@ export function BAsTable({ bas }: BAsTableProps) {
                           ) : (
                             <span className="text-gray-400">&mdash;</span>
                           )}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-gray-900">
+                          {ba.city || <span className="text-gray-400">&mdash;</span>}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-gray-900">
+                          {ba.state || <span className="text-gray-400">&mdash;</span>}
                         </td>
                         <td className="py-3 px-4 text-sm text-gray-900">
                           {ba.zip_code}

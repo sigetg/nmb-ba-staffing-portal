@@ -4,8 +4,8 @@ import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { Button, Card, CardContent, CardHeader, CardTitle, Badge, Alert, Avatar, Textarea } from '@/components/ui'
-import { ChevronLeft, Check, X, FileText, Save, Eye } from 'lucide-react'
+import { Button, Card, CardContent, CardHeader, CardTitle, Badge, Alert, Avatar, Textarea, AddressFields, type AddressFieldsValue } from '@/components/ui'
+import { ChevronLeft, Check, X, FileText, Save, Eye, Pencil } from 'lucide-react'
 import { startImpersonation } from '@/lib/actions/impersonation'
 import { downloadProxiedFile } from '@/lib/api'
 import type { BAProfile, BAPhoto, JobApplication, JobWithDays } from '@/types'
@@ -28,6 +28,15 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
   const [success, setSuccess] = useState<string | null>(null)
   const [notes, setNotes] = useState('')
   const [isSavingNotes, setIsSavingNotes] = useState(false)
+  const [isEditingAddress, setIsEditingAddress] = useState(false)
+  const [address, setAddress] = useState<AddressFieldsValue>({
+    street_address1: '',
+    street_address2: '',
+    city: '',
+    state: '',
+    zip_code: '',
+  })
+  const [isSavingAddress, setIsSavingAddress] = useState(false)
 
   const router = useRouter()
   const supabase = createClient()
@@ -55,6 +64,13 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
         : undefined
       setProfile({ ...profileData, email })
       setNotes(profileData.admin_notes || '')
+      setAddress({
+        street_address1: profileData.street_address1 || '',
+        street_address2: profileData.street_address2 || '',
+        city: profileData.city || '',
+        state: profileData.state || '',
+        zip_code: profileData.zip_code || '',
+      })
 
       // Get photos
       const { data: photosData } = await supabase
@@ -123,6 +139,60 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
       setError('Failed to update status')
     } finally {
       setIsUpdating(false)
+    }
+  }
+
+  const saveAddress = async () => {
+    if (!profile) return
+
+    setError(null)
+    setSuccess(null)
+    setIsSavingAddress(true)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setError('Not authenticated')
+        return
+      }
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const body = {
+        street_address1: address.street_address1.trim() || null,
+        street_address2: address.street_address2.trim() || null,
+        city: address.city.trim() || null,
+        state: address.state.trim().toUpperCase() || null,
+        zip_code: address.zip_code.trim(),
+      }
+      const res = await fetch(`${apiUrl}/api/admin/bas/${profile.id}/address`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(body),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.detail || 'Failed to save address')
+        return
+      }
+
+      setProfile({
+        ...profile,
+        street_address1: body.street_address1,
+        street_address2: body.street_address2,
+        city: body.city,
+        state: body.state,
+        zip_code: body.zip_code,
+      })
+      setSuccess('Address updated successfully')
+      setIsEditingAddress(false)
+    } catch {
+      setError('Failed to save address')
+    } finally {
+      setIsSavingAddress(false)
     }
   }
 
@@ -268,7 +338,19 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
       {/* Profile Details */}
       <Card>
         <CardHeader>
-          <CardTitle>Contact Information</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Contact Information</CardTitle>
+            {!isEditingAddress && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditingAddress(true)}
+              >
+                <Pencil className="w-4 h-4 mr-1" />
+                Edit Address
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -293,14 +375,52 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
               <p className="font-medium text-gray-900">{profile.phone}</p>
             </div>
             <div>
-              <p className="text-sm text-primary-400">ZIP Code</p>
-              <p className="font-medium text-gray-900">{profile.zip_code}</p>
-            </div>
-            <div>
               <p className="text-sm text-primary-400">Member Since</p>
               <p className="font-medium text-gray-900">
                 {new Date(profile.created_at).toLocaleDateString()}
               </p>
+            </div>
+            <div className="sm:col-span-2">
+              <p className="text-sm text-primary-400 mb-1">Home Address</p>
+              {isEditingAddress ? (
+                <div className="space-y-3">
+                  <AddressFields value={address} onChange={setAddress} />
+                  <div className="flex gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setIsEditingAddress(false)
+                        setAddress({
+                          street_address1: profile.street_address1 || '',
+                          street_address2: profile.street_address2 || '',
+                          city: profile.city || '',
+                          state: profile.state || '',
+                          zip_code: profile.zip_code || '',
+                        })
+                      }}
+                      disabled={isSavingAddress}
+                    >
+                      Cancel
+                    </Button>
+                    <Button onClick={saveAddress} isLoading={isSavingAddress}>
+                      Save Address
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                (profile.street_address1 || profile.city || profile.state) ? (
+                  <p className="font-medium text-gray-900 whitespace-pre-line">
+                    {[
+                      profile.street_address1,
+                      profile.street_address2,
+                      [profile.city, profile.state].filter(Boolean).join(', '),
+                      profile.zip_code,
+                    ].filter(Boolean).join('\n')}
+                  </p>
+                ) : (
+                  <p className="font-medium text-gray-900">ZIP: {profile.zip_code}</p>
+                )
+              )}
             </div>
           </div>
         </CardContent>

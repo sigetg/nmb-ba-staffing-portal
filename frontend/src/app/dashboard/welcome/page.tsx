@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui'
 import { getImpersonatedBAId } from '@/lib/impersonation'
 import { StepWelcome } from './_components/step-welcome'
 import { StepW9 } from './_components/step-w9'
+import type { W9SubmitInput } from '@/lib/api'
 import { StepDL } from './_components/step-dl'
 import { StepPayPal } from './_components/step-paypal'
 import { StepDone } from './_components/step-done'
@@ -28,6 +29,7 @@ export default function WelcomePage() {
   const [accessToken, setAccessToken] = useState<string | null>(null)
   const [step, setStep] = useState<StepKey>('welcome')
   const [loading, setLoading] = useState(true)
+  const [w9Initial, setW9Initial] = useState<Partial<W9SubmitInput> | undefined>(undefined)
 
   useEffect(() => {
     let cancelled = false
@@ -39,6 +41,36 @@ export default function WelcomePage() {
       }
       if (cancelled) return
       setAccessToken(session.access_token)
+
+      // Prefill W-9 from BA profile address (best-effort)
+      try {
+        const impersonatedId = getImpersonatedBAId()
+        const profileQuery = impersonatedId
+          ? supabase
+              .from('ba_profiles')
+              .select('name, street_address1, street_address2, city, state, zip_code')
+              .eq('id', impersonatedId)
+              .maybeSingle()
+          : supabase
+              .from('ba_profiles')
+              .select('name, street_address1, street_address2, city, state, zip_code')
+              .eq('user_id', session.user.id)
+              .maybeSingle()
+        const { data: prof } = await profileQuery
+        if (!cancelled && prof) {
+          setW9Initial({
+            legal_name: prof.name || undefined,
+            signature_name: prof.name || undefined,
+            address_line1: prof.street_address1 || undefined,
+            address_line2: prof.street_address2 || undefined,
+            city: prof.city || undefined,
+            state: prof.state || undefined,
+            zip_code: prof.zip_code || undefined,
+          })
+        }
+      } catch {
+        // Non-blocking
+      }
 
       try {
         const status = await getOnboardingStatus(session.access_token)
@@ -131,6 +163,7 @@ export default function WelcomePage() {
       {step === 'w9' && (
         <StepW9
           accessToken={accessToken}
+          initial={w9Initial}
           onBack={() => setStep('welcome')}
           onSubmitted={() => setStep('dl')}
         />

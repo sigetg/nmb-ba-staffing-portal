@@ -29,6 +29,10 @@ export interface BAProfile {
   stripe_account_id?: string
   latitude?: number | null
   longitude?: number | null
+  street_address1?: string | null
+  street_address2?: string | null
+  city?: string | null
+  state?: string | null
   created_at: string
   updated_at?: string
   email?: string
