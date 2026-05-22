@@ -7,6 +7,39 @@ interface PlaceResult {
   address: string
   latitude: number
   longitude: number
+  street_address1?: string
+  city?: string
+  state?: string
+  zip_code?: string
+}
+
+function parseAddressComponents(
+  components: google.maps.GeocoderAddressComponent[] | undefined
+): { street_address1?: string; city?: string; state?: string; zip_code?: string } {
+  if (!components) return {}
+  let streetNumber = ''
+  let route = ''
+  let city: string | undefined
+  let state: string | undefined
+  let zip: string | undefined
+  for (const c of components) {
+    const types = c.types || []
+    if (types.includes('street_number')) streetNumber = c.long_name
+    else if (types.includes('route')) route = c.long_name
+    else if (types.includes('locality')) city = c.long_name
+    else if (!city && (types.includes('postal_town') || types.includes('sublocality') || types.includes('neighborhood'))) {
+      city = c.long_name
+    }
+    else if (types.includes('administrative_area_level_1')) state = c.short_name
+    else if (types.includes('postal_code')) zip = c.long_name
+  }
+  const street = [streetNumber, route].filter(Boolean).join(' ').trim()
+  return {
+    street_address1: street || undefined,
+    city,
+    state,
+    zip_code: zip,
+  }
 }
 
 interface AddressAutocompleteProps {
@@ -51,10 +84,12 @@ export function AddressAutocomplete({
   const handlePlaceChanged = useCallback(() => {
     const place = autocompleteRef.current?.getPlace()
     if (place?.geometry?.location && place.formatted_address) {
+      const parsed = parseAddressComponents(place.address_components)
       onPlaceSelectRef.current({
         address: place.formatted_address,
         latitude: place.geometry.location.lat(),
         longitude: place.geometry.location.lng(),
+        ...parsed,
       })
     }
   }, [])
@@ -69,7 +104,7 @@ export function AddressAutocomplete({
 
       const autocomplete = new google.maps.places.Autocomplete(inputRef.current, {
         types: ['address'],
-        fields: ['formatted_address', 'geometry'],
+        fields: ['formatted_address', 'geometry', 'address_components'],
       })
 
       autocompleteRef.current = autocomplete
