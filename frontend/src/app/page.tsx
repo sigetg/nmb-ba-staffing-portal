@@ -13,6 +13,7 @@ function SignInForm() {
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
@@ -23,6 +24,7 @@ function SignInForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+    setInfo(null)
 
     if (!email.trim()) {
       setError('Email is required')
@@ -36,12 +38,32 @@ function SignInForm() {
     setIsLoading(true)
 
     try {
+      const trimmedEmail = email.trim()
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: trimmedEmail,
         password,
       })
 
       if (signInError) {
+        const isUnconfirmed =
+          signInError.code === 'email_not_confirmed' ||
+          /email not confirmed/i.test(signInError.message)
+        if (isUnconfirmed) {
+          const { error: resendError } = await supabase.auth.resend({
+            type: 'signup',
+            email: trimmedEmail,
+          })
+          if (resendError) {
+            setError(
+              `Your email hasn't been confirmed yet, and we couldn't resend the link: ${resendError.message}`
+            )
+          } else {
+            setInfo(
+              `Your email hasn't been confirmed yet. We just sent a new confirmation link to ${trimmedEmail}. Check your inbox (and spam).`
+            )
+          }
+          return
+        }
         setError(signInError.message)
         return
       }
@@ -86,6 +108,11 @@ function SignInForm() {
           {error && (
             <Alert variant="error" onClose={() => setError(null)}>
               {error}
+            </Alert>
+          )}
+          {info && (
+            <Alert variant="success" onClose={() => setInfo(null)}>
+              {info}
             </Alert>
           )}
 
