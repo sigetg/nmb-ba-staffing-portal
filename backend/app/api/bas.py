@@ -39,6 +39,51 @@ async def geocode_zip(zip_code: str) -> tuple[float, float] | None:
     return None
 
 
+async def geocode_zip_full(zip_code: str) -> dict | None:
+    """Geocode a US zip code and return lat/lng + city/state. Returns None on failure."""
+    if not settings.google_maps_api_key:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                "https://maps.googleapis.com/maps/api/geocode/json",
+                params={
+                    "address": zip_code,
+                    "components": "country:US",
+                    "key": settings.google_maps_api_key,
+                },
+            )
+            data = resp.json()
+            if data.get("status") != "OK" or not data.get("results"):
+                return None
+            result = data["results"][0]
+            loc = result["geometry"]["location"]
+            city = None
+            state = None
+            for comp in result.get("address_components", []):
+                types = comp.get("types", [])
+                if "locality" in types:
+                    city = comp.get("long_name")
+                elif "administrative_area_level_1" in types:
+                    state = comp.get("short_name")
+            if not city:
+                # Fall back to postal_town or neighborhood when locality is absent
+                for comp in result.get("address_components", []):
+                    types = comp.get("types", [])
+                    if "postal_town" in types or "neighborhood" in types:
+                        city = comp.get("long_name")
+                        break
+            return {
+                "latitude": loc["lat"],
+                "longitude": loc["lng"],
+                "city": city,
+                "state": state,
+            }
+    except Exception as e:
+        logger.error(f"Geocoding failed for zip {zip_code}: {e}")
+    return None
+
+
 class BAStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
@@ -55,6 +100,10 @@ class BAProfileCreate(BaseModel):
     shirt_size: str | None = None
     additional_info: str | None = None
     resume_url: str | None = None
+    street_address1: str | None = None
+    street_address2: str | None = None
+    city: str | None = None
+    state: str | None = None
 
 
 class BAProfileUpdate(BaseModel):
@@ -66,6 +115,10 @@ class BAProfileUpdate(BaseModel):
     shirt_size: str | None = None
     additional_info: str | None = None
     resume_url: str | None = None
+    street_address1: str | None = None
+    street_address2: str | None = None
+    city: str | None = None
+    state: str | None = None
 
 
 class BAProfileResponse(BaseModel):
@@ -85,6 +138,10 @@ class BAProfileResponse(BaseModel):
     stripe_account_id: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+    street_address1: str | None = None
+    street_address2: str | None = None
+    city: str | None = None
+    state: str | None = None
     created_at: str
     updated_at: str | None = None
 
@@ -101,6 +158,8 @@ class BAPhoto(BaseModel):
 async def list_bas(
     status: BAStatus | None = None,
     zip_code: str | None = None,
+    state: str | None = None,
+    city: str | None = None,
     limit: int = Query(20, le=100),
     offset: int = 0,
     current_user: CurrentUser = Depends(get_current_admin),
@@ -114,6 +173,10 @@ async def list_bas(
         query = query.eq("status", status.value)
     if zip_code:
         query = query.eq("zip_code", zip_code)
+    if state:
+        query = query.eq("state", state.upper())
+    if city:
+        query = query.ilike("city", f"%{city}%")
 
     query = query.range(offset, offset + limit - 1).order("created_at", desc=True)
 
@@ -177,6 +240,14 @@ async def create_profile(
         insert_data["additional_info"] = profile.additional_info
     if profile.resume_url is not None:
         insert_data["resume_url"] = profile.resume_url
+    if profile.street_address1 is not None:
+        insert_data["street_address1"] = profile.street_address1
+    if profile.street_address2 is not None:
+        insert_data["street_address2"] = profile.street_address2
+    if profile.city is not None:
+        insert_data["city"] = profile.city
+    if profile.state is not None:
+        insert_data["state"] = profile.state.upper()
 
     result = supabase.table("ba_profiles").insert(insert_data).execute()
 
@@ -220,6 +291,14 @@ async def update_profile(
         update_data["additional_info"] = profile.additional_info
     if profile.resume_url is not None:
         update_data["resume_url"] = profile.resume_url
+    if profile.street_address1 is not None:
+        update_data["street_address1"] = profile.street_address1
+    if profile.street_address2 is not None:
+        update_data["street_address2"] = profile.street_address2
+    if profile.city is not None:
+        update_data["city"] = profile.city
+    if profile.state is not None:
+        update_data["state"] = profile.state.upper()
 
     if not update_data:
         # Nothing to update, return existing
@@ -242,11 +321,11 @@ async def geocode_zip_endpoint(
     zip_code: str = Query(..., min_length=5, max_length=5),
     current_user: CurrentUser = Depends(get_current_ba),
 ):
-    """Geocode a zip code and return lat/lng. Optionally updates the BA's profile."""
-    result = await geocode_zip(zip_code)
+    """Geocode a zip code and return lat/lng + city/state."""
+    result = await geocode_zip_full(zip_code)
     if result is None:
-        return {"latitude": None, "longitude": None}
-    return {"latitude": result[0], "longitude": result[1]}
+        return {"latitude": None, "longitude": None, "city": None, "state": None}
+    return result
 
 
 @router.get("/{ba_id}", response_model=BAProfileResponse)

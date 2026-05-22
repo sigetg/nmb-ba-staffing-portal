@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Button, Input, Card, CardContent, CardHeader, CardTitle, Alert, Badge, Avatar } from '@/components/ui'
+import { Button, Input, Card, CardContent, CardHeader, CardTitle, Alert, Badge, Avatar, AddressFields, type AddressFieldsValue } from '@/components/ui'
 import { ImagePlus, FileText } from 'lucide-react'
 import type { BAProfile, BAPhoto } from '@/types'
 import { getImpersonatedBAId } from '@/lib/impersonation'
@@ -32,7 +32,13 @@ export default function ProfilePage() {
   // Edit form state
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
-  const [zipCode, setZipCode] = useState('')
+  const [address, setAddress] = useState<AddressFieldsValue>({
+    street_address1: '',
+    street_address2: '',
+    city: '',
+    state: '',
+    zip_code: '',
+  })
   const [availability, setAvailability] = useState<Record<string, { morning: boolean; afternoon: boolean; evening: boolean }>>({})
 
   const router = useRouter()
@@ -67,7 +73,13 @@ export default function ProfilePage() {
       setProfile({ ...profileData, email })
       setName(profileData.name)
       setPhone(profileData.phone)
-      setZipCode(profileData.zip_code)
+      setAddress({
+        street_address1: profileData.street_address1 || '',
+        street_address2: profileData.street_address2 || '',
+        city: profileData.city || '',
+        state: profileData.state || '',
+        zip_code: profileData.zip_code || '',
+      })
       setAvailability(profileData.availability as Record<string, { morning: boolean; afternoon: boolean; evening: boolean }> || {})
 
       // Load photos
@@ -103,29 +115,37 @@ export default function ProfilePage() {
     setIsSaving(true)
 
     try {
+      const newZip = address.zip_code.trim()
       const updateData: Record<string, unknown> = {
         phone: phone.trim(),
-        zip_code: zipCode.trim(),
+        zip_code: newZip,
+        street_address1: address.street_address1.trim() || null,
+        street_address2: address.street_address2.trim() || null,
+        city: address.city.trim() || null,
+        state: address.state.trim().toUpperCase() || null,
         availability,
         updated_at: new Date().toISOString(),
       }
 
       // Re-geocode if zip code changed
-      if (zipCode.trim() !== profile.zip_code) {
-        try {
-          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-          const { data: { session } } = await supabase.auth.getSession()
-          const geoRes = await fetch(`${apiUrl}/api/bas/geocode-zip?zip_code=${zipCode.trim()}`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${session?.access_token}` },
-          })
-          if (geoRes.ok) {
-            const geo = await geoRes.json()
-            updateData.latitude = geo.latitude
-            updateData.longitude = geo.longitude
+      if (newZip !== profile.zip_code) {
+        const zipForGeocode = newZip.slice(0, 5)
+        if (zipForGeocode.length === 5) {
+          try {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+            const { data: { session } } = await supabase.auth.getSession()
+            const geoRes = await fetch(`${apiUrl}/api/bas/geocode-zip?zip_code=${zipForGeocode}`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${session?.access_token}` },
+            })
+            if (geoRes.ok) {
+              const geo = await geoRes.json()
+              updateData.latitude = geo.latitude
+              updateData.longitude = geo.longitude
+            }
+          } catch {
+            // Geocoding failure is non-blocking
           }
-        } catch {
-          // Geocoding failure is non-blocking
         }
       }
 
@@ -142,7 +162,11 @@ export default function ProfilePage() {
       setProfile({
         ...profile,
         phone: phone.trim(),
-        zip_code: zipCode.trim(),
+        zip_code: newZip,
+        street_address1: updateData.street_address1 as string | null,
+        street_address2: updateData.street_address2 as string | null,
+        city: updateData.city as string | null,
+        state: updateData.state as string | null,
         availability,
         latitude: updateData.latitude as number | undefined ?? profile.latitude,
         longitude: updateData.longitude as number | undefined ?? profile.longitude,
@@ -246,15 +270,9 @@ export default function ProfilePage() {
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="(555) 123-4567"
               />
-              <div>
-                <Input
-                  label="Work Area ZIP Code"
-                  value={zipCode}
-                  onChange={(e) => setZipCode(e.target.value.replace(/\D/g, '').slice(0, 5))}
-                  placeholder="12345"
-                  maxLength={5}
-                />
-                <p className="text-xs text-primary-400 mt-1">Enter the ZIP code where you&apos;d like to find work</p>
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-gray-700">Home Address</p>
+                <AddressFields value={address} onChange={setAddress} />
               </div>
               <div className="flex gap-3 pt-4">
                 <Button
@@ -263,7 +281,13 @@ export default function ProfilePage() {
                     setIsEditing(false)
                     setName(profile.name)
                     setPhone(profile.phone)
-                    setZipCode(profile.zip_code)
+                    setAddress({
+                      street_address1: profile.street_address1 || '',
+                      street_address2: profile.street_address2 || '',
+                      city: profile.city || '',
+                      state: profile.state || '',
+                      zip_code: profile.zip_code || '',
+                    })
                     setAvailability(profile.availability as Record<string, { morning: boolean; afternoon: boolean; evening: boolean }>)
                   }}
                   disabled={isSaving}
@@ -289,9 +313,20 @@ export default function ProfilePage() {
                 <p className="text-sm text-primary-400">Phone Number</p>
                 <p className="font-medium text-gray-900">{profile.phone}</p>
               </div>
-              <div>
-                <p className="text-sm text-primary-400">Work Area ZIP Code</p>
-                <p className="font-medium text-gray-900">{profile.zip_code}</p>
+              <div className="sm:col-span-2">
+                <p className="text-sm text-primary-400">Home Address</p>
+                {(profile.street_address1 || profile.city || profile.state) ? (
+                  <p className="font-medium text-gray-900 whitespace-pre-line">
+                    {[
+                      profile.street_address1,
+                      profile.street_address2,
+                      [profile.city, profile.state].filter(Boolean).join(', '),
+                      profile.zip_code,
+                    ].filter(Boolean).join('\n')}
+                  </p>
+                ) : (
+                  <p className="font-medium text-gray-900">ZIP: {profile.zip_code}</p>
+                )}
               </div>
               <div>
                 <p className="text-sm text-primary-400">Member Since</p>

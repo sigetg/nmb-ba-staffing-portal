@@ -67,6 +67,14 @@ class BANotesUpdate(BaseModel):
     notes: str
 
 
+class BAAddressUpdate(BaseModel):
+    street_address1: str | None = None
+    street_address2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    zip_code: str | None = None
+
+
 class BAStatusResponse(BaseModel):
     id: str
     status: str
@@ -178,6 +186,43 @@ async def update_ba_status(
         status=approval.status,
         updated_at=updated_at,
     )
+
+
+@router.patch("/bas/{ba_id}/address")
+async def update_ba_address(
+    ba_id: str,
+    body: BAAddressUpdate,
+    current_user: CurrentUser = Depends(get_current_admin),
+):
+    """Update a BA's home address fields (admin only)."""
+    supabase = get_supabase_client()
+
+    existing = supabase.table("ba_profiles").select("id").eq("id", ba_id).single().execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="BA not found")
+
+    update_data: dict = {}
+    if body.street_address1 is not None:
+        update_data["street_address1"] = body.street_address1 or None
+    if body.street_address2 is not None:
+        update_data["street_address2"] = body.street_address2 or None
+    if body.city is not None:
+        update_data["city"] = body.city or None
+    if body.state is not None:
+        update_data["state"] = (body.state.upper() or None) if body.state else None
+    if body.zip_code is not None:
+        update_data["zip_code"] = body.zip_code
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    update_data["updated_at"] = datetime.utcnow().isoformat()
+
+    result = supabase.table("ba_profiles").update(update_data).eq("id", ba_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Failed to update address")
+
+    return {"id": ba_id, "address": update_data}
 
 
 @router.patch("/bas/{ba_id}/notes")
