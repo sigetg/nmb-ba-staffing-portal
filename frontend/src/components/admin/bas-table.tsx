@@ -5,8 +5,8 @@ import Link from 'next/link'
 import { Card, CardContent, Badge, Avatar } from '@/components/ui'
 import type { BadgeVariant } from '@/components/ui'
 import { Users, ChevronUp, ChevronDown, ArrowUpDown, Eye } from 'lucide-react'
-import { useRouter } from 'next/navigation'
-import { startImpersonation } from '@/lib/actions/impersonation'
+import { createClient } from '@/lib/supabase/client'
+import { loginAsBA } from '@/lib/api'
 import { US_STATES } from '@/lib/us-states'
 
 interface BA {
@@ -84,7 +84,6 @@ function SortIcon({ column, activeColumn, direction }: { column: SortColumn; act
 }
 
 export function BAsTable({ bas }: BAsTableProps) {
-  const router = useRouter()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [stateFilter, setStateFilter] = useState('')
@@ -268,8 +267,11 @@ export function BAsTable({ bas }: BAsTableProps) {
                             {ba.status !== 'pending' && (
                               <button
                                 onClick={async () => {
-                                  await startImpersonation(ba.id)
-                                  router.push('/dashboard')
+                                  const supabase = createClient()
+                                  const { data: { session } } = await supabase.auth.getSession()
+                                  if (!session) return
+                                  const { confirm_url } = await loginAsBA(session.access_token, ba.id)
+                                  window.location.href = confirm_url
                                 }}
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 text-sm text-primary-400 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors"
                                 title={`Login as ${ba.name}`}

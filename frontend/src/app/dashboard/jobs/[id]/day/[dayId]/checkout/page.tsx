@@ -10,7 +10,6 @@ import { uploadJobPhoto } from '@/lib/api'
 import { DynamicCheckoutForm, type CheckoutResponseValueData } from '@/components/worker/dynamic-checkout-form'
 import { ContactHelpLine } from '@/components/contact-phone'
 import type { JobType } from '@/types'
-import { getImpersonatedBAId } from '@/lib/impersonation'
 
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371000
@@ -62,10 +61,11 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
       if (!user) { router.push('/auth/login'); return }
       setUserId(user.id)
 
-      const impersonatedId = getImpersonatedBAId()
-      const { data: profile } = await (impersonatedId
-        ? supabase.from('ba_profiles').select('id').eq('id', impersonatedId).maybeSingle()
-        : supabase.from('ba_profiles').select('id').eq('user_id', user.id).maybeSingle())
+      const { data: profile } = await supabase
+        .from('ba_profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
       if (!profile) return
       setProfileId(profile.id)
 

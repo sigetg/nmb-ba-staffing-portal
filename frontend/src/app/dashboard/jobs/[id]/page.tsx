@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge, Alert } from '@/components/ui'
-import { ChevronLeft, Calendar, Clock, MapPin, FileText, CheckCircle2, ClipboardList } from 'lucide-react'
+import { ChevronLeft, Calendar, Clock, MapPin, FileText, CheckCircle2, ClipboardList, Camera } from 'lucide-react'
 import { parseLocalDate, getTimezoneAbbr, getLocalToday, getMultiDayDisplayStatus } from '@/lib/utils'
-import type { Job, BAProfile, JobApplication, JobDay, JobDayLocation, JobWithDays, CheckoutResponse, CheckoutResponseValue, JobType } from '@/types'
-import { getImpersonatedBAId } from '@/lib/impersonation'
+import type { Job, BAProfile, JobApplication, JobDay, JobDayLocation, JobWithDays, CheckoutResponse, CheckoutResponseValue, JobType, JobPhoto } from '@/types'
+import { LocationPhotoSection } from '@/components/worker/location-photo-section'
 
 export default function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -28,6 +28,8 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   const [nextJobDay, setNextJobDay] = useState<string | null>(null)
   const [checkoutResponses, setCheckoutResponses] = useState<(CheckoutResponse & { checkout_response_values: CheckoutResponseValue[] })[]>([])
   const [jobType, setJobType] = useState<JobType | null>(null)
+  const [workedLocationIds, setWorkedLocationIds] = useState<Set<string>>(new Set())
+  const [jobPhotos, setJobPhotos] = useState<JobPhoto[]>([])
 
   const router = useRouter()
   const supabase = createClient()
@@ -65,12 +67,12 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
         }))
       setJobDays(sortedDays)
 
-      // Load profile (check impersonation first)
-      const impersonatedId = getImpersonatedBAId()
-      const profileQuery = impersonatedId
-        ? supabase.from('ba_profiles').select('*').eq('id', impersonatedId).maybeSingle()
-        : supabase.from('ba_profiles').select('*').eq('user_id', user.id).maybeSingle()
-      const { data: profileData } = await profileQuery
+      // Load profile
+      const { data: profileData } = await supabase
+        .from('ba_profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle()
 
       setProfile(profileData)
 
@@ -108,14 +110,14 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
         const displayStatus = getMultiDayDisplayStatus(jobData as JobWithDays)
         setIsJobCompleted(displayStatus === 'completed')
 
-        // Check-in state
+        // Check-in state + worked locations
         const allLocationIds = sortedDays.flatMap((d: JobDay & { job_day_locations: JobDayLocation[] }) =>
           (d.job_day_locations || []).map((l: JobDayLocation) => l.id)
         )
         if (allLocationIds.length > 0) {
           const { data: locationCIs } = await supabase
             .from('location_check_ins')
-            .select('id, check_out_time')
+            .select('id, job_day_location_id, check_out_time')
             .eq('ba_id', profileData.id)
             .in('job_day_location_id', allLocationIds)
 
@@ -126,8 +128,17 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             } else {
               setCheckInState('completed')
             }
+            setWorkedLocationIds(new Set(locationCIs.map((ci: { job_day_location_id: string }) => ci.job_day_location_id)))
           }
         }
+
+        // Job photos (for post-completion documentation card)
+        const { data: photoData } = await supabase
+          .from('job_photos')
+          .select('*')
+          .eq('job_id', id)
+          .eq('ba_id', profileData.id)
+        if (photoData) setJobPhotos(photoData as JobPhoto[])
 
         // Checkout responses
         const { data: responses } = await supabase
@@ -357,7 +368,11 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
               {application.status === 'approved' && (
                 <div className="mt-4">
                   {isJobCompleted ? (
-                    <p className="text-gray-500">This job has been completed.</p>
+                    <p className="text-gray-500">
+                      {workedLocationIds.size > 0
+                        ? 'This job has been completed. You can continue to add or remove documentation photos below.'
+                        : 'This job has been completed.'}
+                    </p>
                   ) : checkInState === 'completed' ? (
                     <p className="text-gray-500">You have completed this job.</p>
                   ) : checkInState === 'active' ? (
@@ -412,6 +427,51 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           )}
         </CardContent>
       </Card>
+
+      {/* Job Documentation (post-completion photo uploads) */}
+      {isJobCompleted && application?.status === 'approved' && workedLocationIds.size > 0 && profile && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Camera className="w-5 h-5" />
+              Job Documentation
+            </CardTitle>
+            <p className="text-sm text-gray-500 mt-1">
+              Add or remove documentation photos for any location you worked at. There is no deadline and no cap on how many photos you can upload per category.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {jobDays.map((day, dayIdx) => {
+              const dayWorkedLocations = day.job_day_locations.filter(loc => workedLocationIds.has(loc.id))
+              if (dayWorkedLocations.length === 0) return null
+              return (
+                <div key={day.id} className="space-y-4">
+                  <h4 className="text-sm font-semibold text-gray-700">
+                    Day {dayIdx + 1}: {parseLocalDate(day.date).toLocaleDateString('en-US', {
+                      weekday: 'long',
+                      month: 'long',
+                      day: 'numeric',
+                    })}
+                  </h4>
+                  {dayWorkedLocations.map(loc => (
+                    <LocationPhotoSection
+                      key={loc.id}
+                      jobId={job.id}
+                      baId={profile.id}
+                      jobDayLocationId={loc.id}
+                      photos={jobPhotos.filter(p => p.job_day_location_id === loc.id)}
+                      onPhotoAdded={(p) => setJobPhotos(prev => [...prev, p])}
+                      onPhotoDeleted={(id) => setJobPhotos(prev => prev.filter(p => p.id !== id))}
+                      headerLabel={loc.location}
+                      initiallyCollapsed
+                    />
+                  ))}
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Checkout Response Card */}
       {checkoutResponses.length > 0 && jobType && (() => {

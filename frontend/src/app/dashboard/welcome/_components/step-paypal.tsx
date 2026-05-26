@@ -142,10 +142,28 @@ export function StepPayPal({ accessToken, onBack, onSubmitted }: Props) {
           <Button type="button" variant="ghost" onClick={onBack} disabled={busy}>
             Back
           </Button>
-          <Button type="button" disabled={!connectedEmail || busy} onClick={onSubmitted}>
-            Continue
-          </Button>
+          <div className="flex items-center gap-3">
+            {!connectedEmail && (
+              <button
+                type="button"
+                onClick={onSubmitted}
+                disabled={busy}
+                className="text-sm text-gray-500 hover:text-gray-700 underline"
+              >
+                Skip for now
+              </button>
+            )}
+            <Button type="button" disabled={!connectedEmail || busy} onClick={onSubmitted}>
+              Continue
+            </Button>
+          </div>
         </div>
+        {!connectedEmail && (
+          <p className="text-xs text-gray-500 mt-3">
+            You can skip this for now — you&apos;ll still be able to browse and apply for jobs.
+            We&apos;ll show a reminder until you connect PayPal, since we can&apos;t pay you without it.
+          </p>
+        )}
       </CardContent>
     </Card>
   )

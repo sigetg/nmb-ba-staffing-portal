@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.core.auth import CurrentUser, get_current_admin
+from app.core.config import settings
 from app.core.supabase import get_supabase_client
 from app.services import payouts as payouts_svc
 from app.services.email import (
@@ -223,6 +224,45 @@ async def update_ba_address(
         raise HTTPException(status_code=500, detail="Failed to update address")
 
     return {"id": ba_id, "address": update_data}
+
+
+@router.post("/bas/{ba_id}/login-as")
+async def login_as_ba(
+    ba_id: str,
+    current_user: CurrentUser = Depends(get_current_admin),
+):
+    """Mint a magic-link signin URL for the BA so the admin can log in as them.
+
+    Admin's existing browser session will be replaced by the BA's once they
+    follow the returned URL. To return to admin, the admin signs back in
+    normally.
+    """
+    supabase = get_supabase_client()
+
+    email, _ = get_ba_email(supabase, ba_id)
+    if not email:
+        raise HTTPException(status_code=404, detail="BA not found")
+
+    try:
+        link = supabase.auth.admin.generate_link(
+            {
+                "type": "magiclink",
+                "email": email,
+                "options": {},
+            }
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502, detail=f"Failed to generate signin link: {exc}"
+        ) from exc
+
+    confirm_url = (
+        f"{settings.frontend_url}/auth/confirm"
+        f"?token_hash={link.properties.hashed_token}"
+        f"&type=magiclink"
+        f"&next=/dashboard"
+    )
+    return {"confirm_url": confirm_url}
 
 
 @router.patch("/bas/{ba_id}/notes")

@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getOnboardingStatus } from '@/lib/api'
 import { Spinner } from '@/components/ui'
-import { getImpersonatedBAId } from '@/lib/impersonation'
 import { StepWelcome } from './_components/step-welcome'
 import { StepW9 } from './_components/step-w9'
 import type { W9SubmitInput } from '@/lib/api'
@@ -44,19 +43,11 @@ export default function WelcomePage() {
 
       // Prefill W-9 from BA profile address (best-effort)
       try {
-        const impersonatedId = getImpersonatedBAId()
-        const profileQuery = impersonatedId
-          ? supabase
-              .from('ba_profiles')
-              .select('name, street_address1, street_address2, city, state, zip_code')
-              .eq('id', impersonatedId)
-              .maybeSingle()
-          : supabase
-              .from('ba_profiles')
-              .select('name, street_address1, street_address2, city, state, zip_code')
-              .eq('user_id', session.user.id)
-              .maybeSingle()
-        const { data: prof } = await profileQuery
+        const { data: prof } = await supabase
+          .from('ba_profiles')
+          .select('name, street_address1, street_address2, city, state, zip_code')
+          .eq('user_id', session.user.id)
+          .maybeSingle()
         if (!cancelled && prof) {
           setW9Initial({
             legal_name: prof.name || undefined,
@@ -98,14 +89,8 @@ export default function WelcomePage() {
   }, [supabase, router])
 
   async function markWelcomeSeenAndExit() {
-    const impersonatedId = getImpersonatedBAId()
     const { data: { user } } = await supabase.auth.getUser()
-    if (impersonatedId) {
-      await supabase
-        .from('ba_profiles')
-        .update({ has_seen_welcome: true })
-        .eq('id', impersonatedId)
-    } else if (user) {
+    if (user) {
       await supabase
         .from('ba_profiles')
         .update({ has_seen_welcome: true })

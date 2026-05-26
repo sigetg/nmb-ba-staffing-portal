@@ -132,22 +132,5 @@ export async function updateSession(request: NextRequest) {
     return res
   }
 
-  // If impersonation cookie is present on /dashboard routes, verify user is admin
-  const impersonateCookie = request.cookies.get('impersonate_ba_id')?.value
-  if (impersonateCookie && pathname.startsWith('/dashboard') && user) {
-    const { data: userData } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (userData?.role !== 'admin') {
-      // Not admin — delete the cookie and redirect
-      const res = buildRedirect(request, '/')
-      res.cookies.set('impersonate_ba_id', '', { path: '/', maxAge: 0 })
-      return res
-    }
-  }
-
   return supabaseResponse
 }

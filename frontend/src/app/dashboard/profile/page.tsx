@@ -6,7 +6,6 @@ import { createClient } from '@/lib/supabase/client'
 import { Button, Input, Card, CardContent, CardHeader, CardTitle, Alert, Badge, Avatar, AddressFields, type AddressFieldsValue } from '@/components/ui'
 import { ImagePlus, FileText } from 'lucide-react'
 import type { BAProfile, BAPhoto } from '@/types'
-import { getImpersonatedBAId } from '@/lib/impersonation'
 import { downloadProxiedFile } from '@/lib/api'
 import { PayoutMethodCard } from '@/components/dashboard/payout-method-card'
 
@@ -56,11 +55,11 @@ export default function ProfilePage() {
         return
       }
 
-      const impersonatedId = getImpersonatedBAId()
-      const profileQuery = impersonatedId
-        ? supabase.from('ba_profiles').select('*, users(email)').eq('id', impersonatedId).maybeSingle()
-        : supabase.from('ba_profiles').select('*, users(email)').eq('user_id', user.id).maybeSingle()
-      const { data: profileData, error: profileError } = await profileQuery
+      const { data: profileData, error: profileError } = await supabase
+        .from('ba_profiles')
+        .select('*, users(email)')
+        .eq('user_id', user.id)
+        .maybeSingle()
 
       if (profileError || !profileData) {
         router.push('/auth/setup')

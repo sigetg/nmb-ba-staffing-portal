@@ -4,7 +4,6 @@ import { useEffect, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { getImpersonatedBAId } from '@/lib/impersonation'
 
 export default function ActivePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -18,10 +17,11 @@ export default function ActivePage({ params }: { params: Promise<{ id: string }>
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/auth/login'); return }
 
-      const impersonatedId = getImpersonatedBAId()
-      const { data: profile } = await (impersonatedId
-        ? supabase.from('ba_profiles').select('id').eq('id', impersonatedId).maybeSingle()
-        : supabase.from('ba_profiles').select('id').eq('user_id', user.id).maybeSingle())
+      const { data: profile } = await supabase
+        .from('ba_profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
 
       if (!profile) { errorRef.current = 'Profile not found'; loadedRef.current = true; return }
 

@@ -3,44 +3,27 @@
 import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
-import { Button, Card, CardContent, CardHeader, CardTitle, Alert, Select } from '@/components/ui'
-import { ChevronLeft, MapPin, Clock, Camera, Loader2, ChevronDown, ChevronUp, CheckCircle2, X } from 'lucide-react'
+import { Button, Card, CardContent, CardHeader, CardTitle, Alert } from '@/components/ui'
+import { ChevronLeft, MapPin, Clock } from 'lucide-react'
 import { DayLocationTimeline } from '@/components/worker/day-location-timeline'
 import { ContactPhoneBanner } from '@/components/contact-phone'
-import { uploadJobPhoto, deleteJobPhoto } from '@/lib/api'
+import { LocationPhotoSection } from '@/components/worker/location-photo-section'
 import type { JobDayLocation, LocationCheckIn, JobPhoto } from '@/types'
-import { getImpersonatedBAId } from '@/lib/impersonation'
-
-const PHOTO_CATEGORIES = [
-  { value: 'setup', label: 'Setup', min: 3 },
-  { value: 'engagement', label: 'Engagement', min: 5 },
-  { value: 'storefront_signage', label: 'Storefront & Signage', min: 4 },
-  { value: 'team_uniform', label: 'Team Uniform Compliance', min: 1 },
-]
-
-const categoryOptions = PHOTO_CATEGORIES.map(c => ({ value: c.value, label: c.label }))
 
 export default function LocationActivePage({ params }: { params: Promise<{ id: string; dayId: string; locationId: string }> }) {
   const { id: jobId, dayId, locationId } = use(params)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const [jobTitle, setJobTitle] = useState('')
   const [locationData, setLocationData] = useState<JobDayLocation | null>(null)
   const [dayLocations, setDayLocations] = useState<JobDayLocation[]>([])
   const [dayCheckIns, setDayCheckIns] = useState<LocationCheckIn[]>([])
   const [checkIn, setCheckIn] = useState<LocationCheckIn | null>(null)
   const [profileId, setProfileId] = useState<string | null>(null)
-  const [userId, setUserId] = useState<string | null>(null)
 
   // Photos
   const [photos, setPhotos] = useState<JobPhoto[]>([])
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
-  const [isDeletingPhoto, setIsDeletingPhoto] = useState<string | null>(null)
-  const [selectedCategory, setSelectedCategory] = useState('setup')
-  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({ setup: true })
 
   // Timer
   const [elapsed, setElapsed] = useState('00:00:00')
@@ -67,17 +50,14 @@ export default function LocationActivePage({ params }: { params: Promise<{ id: s
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/auth/login'); return }
-      setUserId(user.id)
 
-      const impersonatedId = getImpersonatedBAId()
-      const { data: profile } = await (impersonatedId
-        ? supabase.from('ba_profiles').select('id').eq('id', impersonatedId).maybeSingle()
-        : supabase.from('ba_profiles').select('id').eq('user_id', user.id).maybeSingle())
+      const { data: profile } = await supabase
+        .from('ba_profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
       if (!profile) return
       setProfileId(profile.id)
-
-      const { data: job } = await supabase.from('jobs').select('title').eq('id', jobId).single()
-      if (job) setJobTitle(job.title)
 
       const { data: loc } = await supabase.from('job_day_locations').select('*').eq('id', locationId).single()
       if (loc) setLocationData(loc as JobDayLocation)
@@ -110,42 +90,6 @@ export default function LocationActivePage({ params }: { params: Promise<{ id: s
       setIsLoading(false)
     }
   }
-
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !userId || !profileId) return
-    setIsUploadingPhoto(true)
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) { setError('Not authenticated'); return }
-
-      const result = await uploadJobPhoto(session.access_token, file, jobId, selectedCategory, locationId, profileId!)
-      const newPhoto = { id: result.id, url: result.url, photo_type: selectedCategory, job_id: jobId, ba_id: profileId!, job_day_location_id: locationId, created_at: new Date().toISOString() } as JobPhoto
-      setPhotos(prev => [...prev, newPhoto])
-    } catch {
-      setError('Failed to upload photo')
-    } finally {
-      setIsUploadingPhoto(false)
-    }
-  }
-
-  const handlePhotoDelete = async (photo: JobPhoto, photoType: string) => {
-    if (!confirm('Remove this photo?')) return
-    setIsDeletingPhoto(photo.id)
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.access_token) {
-        await deleteJobPhoto(session.access_token, photo.id)
-      }
-      setPhotos(prev => prev.filter(p => p.id !== photo.id))
-    } catch {
-      setError('Failed to remove photo')
-    } finally {
-      setIsDeletingPhoto(null)
-    }
-  }
-
-  const getPhotosForCategory = (cat: string) => photos.filter(p => p.photo_type === cat)
 
   // Determine if this is the last location of the day
   const currentIdx = dayLocations.findIndex(l => l.id === locationId)
@@ -194,78 +138,17 @@ export default function LocationActivePage({ params }: { params: Promise<{ id: s
       )}
 
       {/* Photo Documentation */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Documentation Requirements</CardTitle>
-          <p className="text-sm text-gray-500 mt-1">
-            Take and upload photos throughout your shift to document your work. Select a category from the dropdown, then tap Upload to take a new photo or choose one from your camera roll. Green checkmarks show which requirements you have met. All categories must be complete before you can check out.
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Upload control */}
-          <div className="flex items-center gap-3">
-            <div className="flex-1">
-              <Select
-                label="Photo Category"
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                options={categoryOptions}
-              />
-            </div>
-            <div className="pt-6">
-              <label className="inline-flex items-center gap-2 px-3 py-2 bg-primary-400 text-white rounded-lg hover:bg-primary-500 cursor-pointer text-sm">
-                {isUploadingPhoto ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
-                {isUploadingPhoto ? 'Uploading' : 'Upload'}
-                <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" disabled={isUploadingPhoto} />
-              </label>
-            </div>
-          </div>
-
-          {/* Category sections */}
-          {PHOTO_CATEGORIES.map(cat => {
-            const catPhotos = getPhotosForCategory(cat.value)
-            const met = catPhotos.length >= cat.min
-            const isExpanded = expandedCategories[cat.value]
-
-            return (
-              <div key={cat.value} className="border border-gray-200 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setExpandedCategories(prev => ({ ...prev, [cat.value]: !prev[cat.value] }))}
-                  className="w-full flex items-center justify-between px-4 py-3"
-                >
-                  <div className="flex items-center gap-2">
-                    {met ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <div className="w-4 h-4 rounded-full border-2 border-gray-300" />}
-                    <span className="text-sm font-medium">{cat.label}</span>
-                    <span className={`text-xs ${met ? 'text-green-600' : 'text-gray-400'}`}>
-                      {catPhotos.length}/{cat.min}
-                    </span>
-                  </div>
-                  {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-                </button>
-
-                {isExpanded && catPhotos.length > 0 && (
-                  <div className="px-4 pb-3 grid grid-cols-4 gap-2">
-                    {catPhotos.map(p => (
-                      <div key={p.id} className="relative aspect-square rounded overflow-hidden border group">
-                        <Image src={p.url} alt={cat.label} fill sizes="128px" className="object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => handlePhotoDelete(p, cat.value)}
-                          disabled={isDeletingPhoto === p.id}
-                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
-                        >
-                          {isDeletingPhoto === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </CardContent>
-      </Card>
+      {profileId && (
+        <LocationPhotoSection
+          jobId={jobId}
+          baId={profileId}
+          jobDayLocationId={locationId}
+          photos={photos}
+          onPhotoAdded={(p) => setPhotos(prev => [...prev, p])}
+          onPhotoDeleted={(id) => setPhotos(prev => prev.filter(p => p.id !== id))}
+          helperText="Take and upload photos throughout your shift to document your work. Select a category from the dropdown, then tap Upload to take a new photo or choose one from your camera roll. Green checkmarks show which requirements you have met. All categories must be complete before you can check out. You can upload more than the required minimum if needed."
+        />
+      )}
 
       {/* Bottom navigation */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4">
