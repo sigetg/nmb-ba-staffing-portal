@@ -9,7 +9,6 @@ import { ChevronLeft, MapPin, Camera, Loader2, CheckCircle2, Navigation } from '
 import { uploadJobPhoto } from '@/lib/api'
 import { ContactHelpLine } from '@/components/contact-phone'
 import type { JobDayLocation } from '@/types'
-import { getImpersonatedBAId } from '@/lib/impersonation'
 
 export default function DepartLocationPage({ params }: { params: Promise<{ id: string; dayId: string; locationId: string }> }) {
   const { id: jobId, dayId, locationId } = use(params)
@@ -40,10 +39,11 @@ export default function DepartLocationPage({ params }: { params: Promise<{ id: s
       if (!user) { router.push('/auth/login'); return }
       setUserId(user.id)
 
-      const impersonatedId = getImpersonatedBAId()
-      const { data: profile } = await (impersonatedId
-        ? supabase.from('ba_profiles').select('id').eq('id', impersonatedId).maybeSingle()
-        : supabase.from('ba_profiles').select('id').eq('user_id', user.id).maybeSingle())
+      const { data: profile } = await supabase
+        .from('ba_profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
       if (!profile) return
       setProfileId(profile.id)
 

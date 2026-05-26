@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Job, JobDay, JobDayLocation, LocationCheckIn, TravelLog } from '@/types'
 import { getLocalToday } from '@/lib/utils'
-import { getImpersonatedBAId } from '@/lib/impersonation'
 
 interface MultiDayJobState {
   job: Job | null
@@ -45,10 +44,11 @@ export function useMultiDayJob(jobId: string) {
       if (!user) { setError('Not authenticated'); return }
       setUserId(user.id)
 
-      const impersonatedId = getImpersonatedBAId()
-      const { data: profile } = await (impersonatedId
-        ? supabase.from('ba_profiles').select('id').eq('id', impersonatedId).maybeSingle()
-        : supabase.from('ba_profiles').select('id').eq('user_id', user.id).maybeSingle())
+      const { data: profile } = await supabase
+        .from('ba_profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
 
       if (!profile) { setError('Profile not found'); return }
       setProfileId(profile.id)

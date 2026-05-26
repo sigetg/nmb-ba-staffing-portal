@@ -11,7 +11,6 @@ import { DayLocationTimeline } from '@/components/worker/day-location-timeline'
 import { ContactHelpLine } from '@/components/contact-phone'
 import { uploadJobPhoto } from '@/lib/api'
 import type { JobDayLocation, LocationCheckIn } from '@/types'
-import { getImpersonatedBAId } from '@/lib/impersonation'
 import { getLocalToday } from '@/lib/utils'
 
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -63,10 +62,11 @@ export default function LocationCheckInPage({ params }: { params: Promise<{ id: 
       if (!user) { router.push('/auth/login'); return }
       setUserId(user.id)
 
-      const impersonatedId = getImpersonatedBAId()
-      const { data: profile } = await (impersonatedId
-        ? supabase.from('ba_profiles').select('id').eq('id', impersonatedId).maybeSingle()
-        : supabase.from('ba_profiles').select('id').eq('user_id', user.id).maybeSingle())
+      const { data: profile } = await supabase
+        .from('ba_profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
       if (!profile) { setError('Profile not found'); return }
       setProfileId(profile.id)
 

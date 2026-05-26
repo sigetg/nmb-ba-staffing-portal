@@ -6,8 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge, Alert, Avatar, Textarea, AddressFields, type AddressFieldsValue } from '@/components/ui'
 import { ChevronLeft, Check, X, FileText, Save, Eye, Pencil } from 'lucide-react'
-import { startImpersonation } from '@/lib/actions/impersonation'
-import { downloadProxiedFile } from '@/lib/api'
+import { downloadProxiedFile, loginAsBA } from '@/lib/api'
 import type { BAProfile, BAPhoto, JobApplication, JobWithDays } from '@/types'
 import { formatJobStatus, getMultiDayDisplayStatus, getJobStatusBadgeVariant, getJobDateDisplay } from '@/lib/utils'
 
@@ -323,8 +322,11 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
                 variant="outline"
                 size="sm"
                 onClick={async () => {
-                  await startImpersonation(id)
-                  router.push('/dashboard')
+                  const supabase = createClient()
+                  const { data: { session } } = await supabase.auth.getSession()
+                  if (!session) return
+                  const { confirm_url } = await loginAsBA(session.access_token, id)
+                  window.location.href = confirm_url
                 }}
               >
                 <Eye className="w-4 h-4 mr-1" />

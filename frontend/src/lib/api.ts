@@ -227,6 +227,18 @@ export async function disconnectPaypal(
   await apiRequest('/api/profile/paypal/disconnect', accessToken, { method: 'POST' })
 }
 
+// --- Admin: Login As ---
+
+export async function loginAsBA(
+  accessToken: string,
+  baId: string
+): Promise<{ confirm_url: string }> {
+  const res = await apiRequest(`/api/admin/bas/${baId}/login-as`, accessToken, {
+    method: 'POST',
+  })
+  return res.json()
+}
+
 // --- QBO admin ---
 
 export interface QboStatus {

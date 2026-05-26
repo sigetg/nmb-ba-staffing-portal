@@ -1,4 +1,3 @@
-import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { requireOnboardedBA } from '@/lib/supabase/onboarding-guard'
 import Link from 'next/link'
@@ -7,14 +6,15 @@ import { Calendar, Clock, MapPin, Briefcase, AlertTriangle, Navigation } from 'l
 import { parseLocalDate, getLocalToday, getTimezoneAbbr, getMinJobDistance } from '@/lib/utils'
 import type { JobWithDays } from '@/types'
 
-async function getAvailableJobs(userId: string, impersonatedBAId?: string) {
+async function getAvailableJobs(userId: string) {
   const supabase = await createClient()
 
   // Get BA profile (include lat/lng for distance sorting)
-  const profileQuery = impersonatedBAId
-    ? supabase.from('ba_profiles').select('id, status, latitude, longitude').eq('id', impersonatedBAId).maybeSingle()
-    : supabase.from('ba_profiles').select('id, status, latitude, longitude').eq('user_id', userId).maybeSingle()
-  const { data: profile } = await profileQuery
+  const { data: profile } = await supabase
+    .from('ba_profiles')
+    .select('id, status, latitude, longitude')
+    .eq('user_id', userId)
+    .maybeSingle()
 
   // Get published jobs with their days/locations
   const { data: jobs } = await supabase
@@ -95,10 +95,7 @@ export default async function JobsPage() {
     return null
   }
 
-  const cookieStore = await cookies()
-  const impersonatedBAId = cookieStore.get('impersonate_ba_id')?.value
-
-  const { profile, jobs, appliedJobIds, applicationStatuses, distanceMap } = await getAvailableJobs(user.id, impersonatedBAId)
+  const { profile, jobs, appliedJobIds, applicationStatuses, distanceMap } = await getAvailableJobs(user.id)
 
   const canApply = profile?.status === 'approved'
 

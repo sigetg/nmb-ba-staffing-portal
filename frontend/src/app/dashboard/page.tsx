@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle, Badge, PersistentBanner } from '@/components/ui'
 import { Calendar, Clock, CheckCircle2, Briefcase, ChevronRight } from 'lucide-react'
 import { getMultiDayDisplayStatus, getJobDateDisplay, getJobLocationDisplay, getLocalToday } from '@/lib/utils'
-import { getEffectiveBAProfile } from '@/lib/supabase/auth-helpers'
+import { getBAUserWithProfile } from '@/lib/supabase/auth-helpers'
 import { isOnboardingComplete } from '@/lib/supabase/onboarding-guard'
 import type { JobWithDays } from '@/types'
 
@@ -147,7 +147,7 @@ async function getDashboardData(profileId: string) {
 }
 
 export default async function DashboardPage() {
-  const result = await getEffectiveBAProfile()
+  const result = await getBAUserWithProfile()
 
   if (!result?.profile) {
     return null
@@ -191,16 +191,6 @@ export default async function DashboardPage() {
           message="We need your W-9 and ID on file before you can apply for jobs."
           ctaLabel="Complete onboarding"
           ctaHref="/dashboard/welcome"
-        />
-      )}
-
-      {process.env.NEXT_PUBLIC_PAYOUT_PROMPT_ENABLED === 'true' && isApproved && onboardingComplete && !profile.payout_info_submitted_at && (stats?.completed ?? 0) > 0 && (
-        <PersistentBanner
-          variant="warning"
-          title="Connect PayPal to receive your earnings"
-          message="You've completed a job. Add your PayPal so we can pay you."
-          ctaLabel="Connect PayPal"
-          ctaHref="/dashboard/profile#payout"
         />
       )}
 

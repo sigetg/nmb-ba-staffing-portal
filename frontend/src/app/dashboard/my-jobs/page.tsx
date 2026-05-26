@@ -1,4 +1,3 @@
-import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { requireOnboardedBA } from '@/lib/supabase/onboarding-guard'
 import Link from 'next/link'
@@ -24,13 +23,14 @@ function getDayProgress(job: JobWithDays): { current: number; total: number } | 
   return { current: currentIdx + 1, total: days.length }
 }
 
-async function getMyJobs(userId: string, impersonatedBAId?: string) {
+async function getMyJobs(userId: string) {
   const supabase = await createClient()
 
-  const profileQuery = impersonatedBAId
-    ? supabase.from('ba_profiles').select('id').eq('id', impersonatedBAId).maybeSingle()
-    : supabase.from('ba_profiles').select('id').eq('user_id', userId).maybeSingle()
-  const { data: profile } = await profileQuery
+  const { data: profile } = await supabase
+    .from('ba_profiles')
+    .select('id')
+    .eq('user_id', userId)
+    .maybeSingle()
 
   if (!profile) {
     return {
@@ -114,10 +114,7 @@ export default async function MyJobsPage() {
     return null
   }
 
-  const cookieStore = await cookies()
-  const impersonatedBAId = cookieStore.get('impersonate_ba_id')?.value
-
-  const { applications, activeJobId, activeCheckInTime, startedJobIds, completedByCheckoutIds } = await getMyJobs(user.id, impersonatedBAId)
+  const { applications, activeJobId, activeCheckInTime, startedJobIds, completedByCheckoutIds } = await getMyJobs(user.id)
 
   const activeJobApp = activeJobId
     ? applications.find(app => app.jobs.id === activeJobId)
