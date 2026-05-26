@@ -58,14 +58,22 @@ def last4(value: str) -> str:
 # --- OAuth state (stateless, HMAC-signed) ---
 
 
-def sign_oauth_state(user_id: str, *, purpose: str = "oauth") -> str:
-    """Pack (user_id, nonce) into an HMAC-signed state string.
+def sign_oauth_state(
+    user_id: str, *, purpose: str = "oauth", return_to: str | None = None
+) -> str:
+    """Pack (user_id, optional return_to, nonce) into an HMAC-signed state string.
 
     Avoids needing cookies (which fail cross-site) by carrying everything in
     the OAuth state param itself. HMAC ensures it can't be forged.
+    `return_to` is a relative frontend path the callback should redirect to;
+    it's base64-encoded into the state so the round-trip preserves slashes.
     """
     nonce = secrets.token_urlsafe(12)
-    payload = f"{purpose}:{user_id}:{nonce}"
+    if return_to:
+        rt_b64 = base64.urlsafe_b64encode(return_to.encode("utf-8")).decode("ascii").rstrip("=")
+        payload = f"{purpose}:{user_id}:{rt_b64}:{nonce}"
+    else:
+        payload = f"{purpose}:{user_id}:{nonce}"
     sig = hmac.new(
         settings.secret_key.encode("utf-8"),
         payload.encode("utf-8"),
@@ -74,19 +82,34 @@ def sign_oauth_state(user_id: str, *, purpose: str = "oauth") -> str:
     return f"{payload}:{sig}"
 
 
-def verify_oauth_state(state: str, *, purpose: str = "oauth") -> str:
-    """Verify HMAC-signed state and return the user_id. Raises on tamper / wrong purpose."""
+def verify_oauth_state(state: str, *, purpose: str = "oauth") -> tuple[str, str | None]:
+    """Verify HMAC-signed state and return (user_id, return_to).
+
+    `return_to` is None for states minted without one. Raises on tamper /
+    wrong purpose / malformed input.
+    """
     parts = state.split(":")
-    if len(parts) != 4:
+    if len(parts) == 4:
+        got_purpose, user_id, nonce, sig = parts
+        return_to: str | None = None
+        signed = f"{got_purpose}:{user_id}:{nonce}"
+    elif len(parts) == 5:
+        got_purpose, user_id, rt_b64, nonce, sig = parts
+        signed = f"{got_purpose}:{user_id}:{rt_b64}:{nonce}"
+        pad = "=" * (-len(rt_b64) % 4)
+        try:
+            return_to = base64.urlsafe_b64decode(rt_b64 + pad).decode("utf-8")
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ValueError("Malformed OAuth state return_to") from exc
+    else:
         raise ValueError("Malformed OAuth state")
-    got_purpose, user_id, nonce, sig = parts
     if got_purpose != purpose:
         raise ValueError("OAuth state purpose mismatch")
     expected_sig = hmac.new(
         settings.secret_key.encode("utf-8"),
-        f"{got_purpose}:{user_id}:{nonce}".encode("utf-8"),
+        signed.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
     if not hmac.compare_digest(sig, expected_sig):
         raise ValueError("OAuth state signature invalid")
-    return user_id
+    return user_id, return_to

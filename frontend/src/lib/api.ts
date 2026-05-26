@@ -215,9 +215,11 @@ export async function uploadDriversLicense(
 // --- PayPal Log In OAuth ---
 
 export async function getPaypalConnectUrl(
-  accessToken: string
+  accessToken: string,
+  returnTo?: string
 ): Promise<{ url: string; state: string }> {
-  const res = await apiRequest('/api/profile/paypal/connect', accessToken)
+  const qs = returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : ''
+  const res = await apiRequest(`/api/profile/paypal/connect${qs}`, accessToken)
   return res.json()
 }
 

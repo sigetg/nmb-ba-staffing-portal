@@ -48,7 +48,7 @@ async def qbo_callback(
     realmId: str,  # noqa: N803 — Intuit query param name
 ):
     try:
-        user_id = verify_oauth_state(state, purpose="qbo")
+        user_id, _ = verify_oauth_state(state, purpose="qbo")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid OAuth state: {exc}") from exc
 
