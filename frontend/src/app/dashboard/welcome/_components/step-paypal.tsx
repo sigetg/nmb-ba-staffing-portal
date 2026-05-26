@@ -41,12 +41,17 @@ export function StepPayPal({ accessToken, onBack, onSubmitted }: Props) {
     }
     check()
 
-    // If user just returned from PayPal OAuth, the URL has ?paypal=connected — refresh state.
+    // If user just returned from PayPal OAuth, the URL has ?paypal=connected|cancelled|error.
     const url = new URL(window.location.href)
-    if (url.searchParams.get('paypal') === 'connected') {
-      // Strip the param; state will refresh via the check() above and via re-poll on focus
+    const paypalStatus = url.searchParams.get('paypal')
+    if (paypalStatus) {
       url.searchParams.delete('paypal')
       window.history.replaceState({}, '', url.toString())
+      if (paypalStatus === 'cancelled') {
+        setError("You cancelled the PayPal connect. You can try again or skip for now.")
+      } else if (paypalStatus === 'error') {
+        setError("Something went wrong connecting PayPal. Please try again.")
+      }
     }
 
     function onFocus() {
@@ -63,7 +68,7 @@ export function StepPayPal({ accessToken, onBack, onSubmitted }: Props) {
     setBusy(true)
     setError(null)
     try {
-      const { url } = await getPaypalConnectUrl(accessToken)
+      const { url } = await getPaypalConnectUrl(accessToken, '/dashboard/welcome')
       window.location.href = url
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start PayPal connect')

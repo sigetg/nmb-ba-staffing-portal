@@ -329,19 +329,54 @@ def _paypal_login_redirect_uri() -> str:
     return f"{base}/api/profile/paypal/callback"
 
 
+_DEFAULT_PAYPAL_RETURN_TO = "/dashboard/profile#payout"
+
+
+def _validate_return_to(return_to: str | None) -> str:
+    """Whitelist `return_to` to relative paths under our frontend.
+
+    Rejects empty/protocol/protocol-relative/non-leading-slash values to
+    prevent open-redirect via the signed state. Falls back to the profile
+    payout anchor.
+    """
+    if not return_to:
+        return _DEFAULT_PAYPAL_RETURN_TO
+    if not return_to.startswith("/") or return_to.startswith("//"):
+        return _DEFAULT_PAYPAL_RETURN_TO
+    return return_to
+
+
+def _paypal_redirect(return_to: str | None, params: dict[str, str]) -> RedirectResponse:
+    """Build a 302 back to the frontend, preserving any existing fragment."""
+    safe = _validate_return_to(return_to)
+    base = settings.frontend_url.rstrip("/")
+    # Split off any trailing #fragment so query params land before it.
+    fragment = ""
+    path = safe
+    if "#" in safe:
+        path, fragment = safe.split("#", 1)
+        fragment = f"#{fragment}"
+    joiner = "&" if "?" in path else "?"
+    qs = "&".join(f"{k}={v}" for k, v in params.items())
+    return RedirectResponse(url=f"{base}{path}{joiner}{qs}{fragment}", status_code=302)
+
+
 @router.get("/paypal/connect")
 async def paypal_connect_url(
+    return_to: str | None = None,
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """Returns the Log In with PayPal consent URL with an HMAC-signed state.
 
-    State carries user_id + nonce + signature so we don't need cookies
-    (which get rejected cross-site between staffing.nmbmedia.com and the
-    backend's Railway URL).
+    State carries user_id + return_to + nonce + signature so we don't need
+    cookies (which get rejected cross-site between staffing.nmbmedia.com and
+    the backend's Railway URL). `return_to` is a relative frontend path the
+    callback should bounce the user to (welcome step vs. profile card).
     """
     if current_user.role != "ba":
         raise HTTPException(status_code=403, detail="Only BAs can connect PayPal")
-    state = sign_oauth_state(current_user.id, purpose="paypal")
+    safe_return_to = _validate_return_to(return_to)
+    state = sign_oauth_state(current_user.id, purpose="paypal", return_to=safe_return_to)
     url = paypal.get_login_oauth_url(
         state=state, redirect_uri=_paypal_login_redirect_uri()
     )
@@ -350,24 +385,37 @@ async def paypal_connect_url(
 
 @router.get("/paypal/callback")
 async def paypal_callback(
-    code: str,
     state: str,
+    code: str | None = None,
+    error: str | None = None,
 ):
-    """Handle PayPal OAuth redirect: verify HMAC state, exchange code, persist verified email."""
+    """Handle PayPal OAuth redirect: verify HMAC state, exchange code, persist verified email.
+
+    PayPal returns `?error=access_denied&state=...` (no `code`) when the user
+    cancels the consent screen, so `code` is optional here. On cancel/error
+    we redirect back to the originating page with `?paypal=cancelled` instead
+    of 422-ing.
+    """
     try:
-        user_id = verify_oauth_state(state, purpose="paypal")
+        user_id, return_to = verify_oauth_state(state, purpose="paypal")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid OAuth state: {exc}") from exc
+
+    # User hit Cancel (or PayPal otherwise refused consent): no `code`, just
+    # bounce them back to where they came from.
+    if error or not code:
+        return _paypal_redirect(return_to, {"paypal": "cancelled"})
 
     try:
         info = paypal.exchange_login_code(code, redirect_uri=_paypal_login_redirect_uri())
     except Exception as exc:
         logger.error("PayPal Login exchange failed: %s", exc)
-        raise HTTPException(status_code=502, detail=f"PayPal exchange failed: {exc}") from exc
+        return _paypal_redirect(return_to, {"paypal": "error"})
 
     email = info.get("email")
     if not email:
-        raise HTTPException(status_code=502, detail="PayPal did not return a verified email")
+        logger.error("PayPal callback returned no verified email for user %s", user_id)
+        return _paypal_redirect(return_to, {"paypal": "error"})
 
     supabase = get_supabase_client()
     res = (
@@ -388,8 +436,7 @@ async def paypal_callback(
         }
     ).eq("id", res.data["id"]).execute()
 
-    target = f"{settings.frontend_url.rstrip('/')}/dashboard/welcome?paypal=connected"
-    return RedirectResponse(url=target, status_code=302)
+    return _paypal_redirect(return_to, {"paypal": "connected"})
 
 
 @router.post("/paypal/disconnect", response_model=PayoutMethodStatus)

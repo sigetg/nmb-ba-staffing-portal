@@ -41,11 +41,17 @@ export function PayoutMethodCard() {
     }
     init()
 
-    // Returning from PayPal OAuth lands here with ?paypal=connected.
+    // Returning from PayPal OAuth lands here with ?paypal=connected|cancelled|error.
     const url = new URL(window.location.href)
-    if (url.searchParams.get('paypal') === 'connected') {
+    const paypalStatus = url.searchParams.get('paypal')
+    if (paypalStatus) {
       url.searchParams.delete('paypal')
       window.history.replaceState({}, '', url.toString())
+      if (paypalStatus === 'cancelled') {
+        setError("You cancelled the PayPal connect. Try again when you're ready.")
+      } else if (paypalStatus === 'error') {
+        setError("Something went wrong connecting PayPal. Please try again.")
+      }
     }
 
     return () => {
@@ -58,7 +64,7 @@ export function PayoutMethodCard() {
     setBusy(true)
     setError(null)
     try {
-      const { url } = await getPaypalConnectUrl(accessToken)
+      const { url } = await getPaypalConnectUrl(accessToken, '/dashboard/profile#payout')
       window.location.href = url
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start PayPal connect')
