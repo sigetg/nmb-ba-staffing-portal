@@ -83,7 +83,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           .select('*')
           .eq('job_id', id)
           .eq('ba_id', profileData.id)
-          .single()
+          .maybeSingle()
 
         setApplication(appData)
 

@@ -385,11 +385,11 @@ async def unassign_ba_from_job(
         .select("id, status")
         .eq("job_id", job_id)
         .eq("ba_id", ba_id)
-        .single()
+        .maybe_single()
         .execute()
     )
 
-    if not application.data:
+    if not application or not application.data:
         raise HTTPException(status_code=404, detail="Application not found")
 
     if application.data["status"] != "approved":
@@ -410,10 +410,10 @@ async def unassign_ba_from_job(
             .eq("ba_id", ba_id)
             .in_("job_day_location_id", loc_ids)
             .limit(1)
-            .single()
+            .maybe_single()
             .execute()
         )
-        if checkin.data:
+        if checkin and checkin.data:
             raise HTTPException(
                 status_code=400,
                 detail="Cannot unassign BA who has already checked in",
