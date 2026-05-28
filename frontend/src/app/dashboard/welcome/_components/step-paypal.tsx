@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from '@/components/ui'
 import { disconnectPaypal, getPayoutMethod, getPaypalConnectUrl } from '@/lib/api'
+import { friendlyError } from '@/lib/error-message'
 
 interface Props {
   accessToken: string
@@ -50,7 +51,7 @@ export function StepPayPal({ accessToken, onBack, onSubmitted }: Props) {
       if (paypalStatus === 'cancelled') {
         setError("You cancelled the PayPal connect. You can try again or skip for now.")
       } else if (paypalStatus === 'error') {
-        setError("Something went wrong connecting PayPal. Please try again.")
+        setError(friendlyError(new Error('PayPal OAuth callback returned error'), 'payout'))
       }
     }
 
@@ -71,7 +72,7 @@ export function StepPayPal({ accessToken, onBack, onSubmitted }: Props) {
       const { url } = await getPaypalConnectUrl(accessToken, '/dashboard/welcome')
       window.location.href = url
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start PayPal connect')
+      setError(friendlyError(err, 'payout'))
     } finally {
       setBusy(false)
     }

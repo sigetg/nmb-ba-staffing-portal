@@ -7,9 +7,13 @@ import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Alert, Textarea } from '@/components/ui'
 import { ChevronLeft, MapPin, Camera, Loader2, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react'
 import { uploadJobPhoto } from '@/lib/api'
+import { compressImage } from '@/lib/compress-image'
+import { friendlyError } from '@/lib/error-message'
 import { DynamicCheckoutForm, type CheckoutResponseValueData } from '@/components/worker/dynamic-checkout-form'
 import { ContactHelpLine } from '@/components/contact-phone'
 import type { JobType } from '@/types'
+
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024
 
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371000
@@ -149,15 +153,21 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !userId || !profileId) return
+    if (file.size > MAX_PHOTO_BYTES) {
+      setError('Photo must be under 5MB')
+      return
+    }
     setIsUploadingPhoto(true)
+    setError(null)
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) { setError('Not authenticated'); return }
 
-      const { url } = await uploadJobPhoto(session.access_token, file, jobId, 'check_out', lastLocationId || undefined, profileId!)
+      const compressed = await compressImage(file)
+      const { url } = await uploadJobPhoto(session.access_token, compressed, jobId, 'check_out', lastLocationId || undefined, profileId!)
       setCheckoutPhoto(url)
-    } catch {
-      setError('Failed to upload photo')
+    } catch (err) {
+      setError(friendlyError(err, 'upload'))
     } finally {
       setIsUploadingPhoto(false)
     }

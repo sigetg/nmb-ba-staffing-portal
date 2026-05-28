@@ -135,6 +135,14 @@ async def get_current_user(
         if profile_data and profile_data.data:
             profile = profile_data.data
 
+    if settings.sentry_dsn:
+        try:
+            import sentry_sdk
+
+            sentry_sdk.set_user({"id": user_id, "email": email})
+        except Exception:
+            pass
+
     return CurrentUser(
         id=user_id,
         email=email,

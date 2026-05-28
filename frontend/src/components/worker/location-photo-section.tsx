@@ -6,7 +6,11 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle, Select, Alert } from '@/components/ui'
 import { Camera, Loader2, ChevronDown, ChevronUp, CheckCircle2, X } from 'lucide-react'
 import { uploadJobPhoto, deleteJobPhoto } from '@/lib/api'
+import { compressImage } from '@/lib/compress-image'
+import { friendlyError } from '@/lib/error-message'
 import type { JobPhoto } from '@/types'
+
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024
 
 export const PHOTO_CATEGORIES = [
   { value: 'setup', label: 'Setup', min: 3 },
@@ -58,6 +62,11 @@ export function LocationPhotoSection({
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    if (file.size > MAX_PHOTO_BYTES) {
+      setError('Photo must be under 5MB')
+      e.target.value = ''
+      return
+    }
     setIsUploadingPhoto(true)
     setError(null)
     try {
@@ -66,9 +75,10 @@ export function LocationPhotoSection({
         setError('Not authenticated')
         return
       }
+      const compressed = await compressImage(file)
       const result = await uploadJobPhoto(
         session.access_token,
-        file,
+        compressed,
         jobId,
         selectedCategory,
         jobDayLocationId,
@@ -84,11 +94,10 @@ export function LocationPhotoSection({
         created_at: new Date().toISOString(),
       }
       onPhotoAdded(newPhoto)
-    } catch {
-      setError('Failed to upload photo')
+    } catch (err) {
+      setError(friendlyError(err, 'upload'))
     } finally {
       setIsUploadingPhoto(false)
-      // Reset the input so selecting the same file twice still fires onChange
       e.target.value = ''
     }
   }

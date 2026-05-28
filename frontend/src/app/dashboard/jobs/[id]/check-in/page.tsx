@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, use } from 'react'
+import { useEffect, useRef, useState, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -12,7 +12,7 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
   const isRedirecting = useRef(false)
   const router = useRouter()
   const supabase = createClient()
-  const errorRef = useRef<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const loadedRef = useRef(false)
 
   useEffect(() => {
@@ -26,11 +26,11 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
         .eq('id', id)
         .single()
 
-      if (!jobData) { errorRef.current = 'Job not found'; loadedRef.current = true; return }
+      if (!jobData) { setError('Job not found'); loadedRef.current = true; return }
 
       const jobDays = jobData.job_days || []
       if (jobDays.length === 0) {
-        errorRef.current = 'No days configured for this job'
+        setError('No days configured for this job')
         loadedRef.current = true
         return
       }
@@ -59,10 +59,10 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
     redirect()
   }, [id, router, supabase])
 
-  if (errorRef.current) {
+  if (error) {
     return (
       <div className="text-center py-12">
-        <h2 className="text-xl font-semibold text-gray-900">{errorRef.current}</h2>
+        <h2 className="text-xl font-semibold text-gray-900">{error}</h2>
         <Link href="/dashboard/my-jobs" className="text-primary-400 hover:text-primary-500 mt-2 inline-block">
           Back to my jobs
         </Link>

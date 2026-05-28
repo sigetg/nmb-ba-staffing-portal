@@ -6,6 +6,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Input, Card, CardContent, CardHeader, CardTitle, Alert } from '@/components/ui'
+import { friendlyError } from '@/lib/error-message'
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState('')
@@ -42,8 +43,8 @@ export default function ResetPasswordPage() {
       }
 
       router.push('/?message=password_updated')
-    } catch {
-      setError('An unexpected error occurred. Please try again.')
+    } catch (err) {
+      setError(friendlyError(err, 'auth'))
     } finally {
       setIsLoading(false)
     }

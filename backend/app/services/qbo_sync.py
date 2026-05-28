@@ -7,7 +7,7 @@ after 3 failures the row goes to `manual_review` and the admin is emailed.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from app.core.config import settings
@@ -204,13 +204,13 @@ _BACKOFF_SCHEDULE = [30, 300, 1800]  # seconds: 30s, 5m, 30m
 
 def _next_backoff(attempts: int) -> datetime:
     idx = min(attempts, len(_BACKOFF_SCHEDULE) - 1)
-    return datetime.now(timezone.utc) + timedelta(seconds=_BACKOFF_SCHEDULE[idx])
+    return datetime.now(UTC) + timedelta(seconds=_BACKOFF_SCHEDULE[idx])
 
 
 def process_pending(batch_size: int = 20) -> dict:
     """Pick pending queue rows due for retry; sync them; persist outcomes."""
     supabase = get_supabase_client()
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
 
     res = (
         supabase.table("qbo_sync_queue")

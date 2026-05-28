@@ -10,6 +10,10 @@ import { ChevronLeft, MapPin, Clock, CheckCircle2, XCircle, Camera, Loader2, Ale
 import { DayLocationTimeline } from '@/components/worker/day-location-timeline'
 import { ContactHelpLine } from '@/components/contact-phone'
 import { uploadJobPhoto } from '@/lib/api'
+import { compressImage } from '@/lib/compress-image'
+import { friendlyError } from '@/lib/error-message'
+
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024
 import type { JobDayLocation, LocationCheckIn } from '@/types'
 import { getLocalToday } from '@/lib/utils'
 
@@ -143,15 +147,21 @@ export default function LocationCheckInPage({ params }: { params: Promise<{ id: 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !userId || !profileId) return
+    if (file.size > MAX_PHOTO_BYTES) {
+      setError('Photo must be under 5MB')
+      return
+    }
     setIsUploadingPhoto(true)
+    setError(null)
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) { setError('Not authenticated'); return }
 
-      const { url } = await uploadJobPhoto(session.access_token, file, jobId, 'check_in', locationId, profileId!)
+      const compressed = await compressImage(file)
+      const { url } = await uploadJobPhoto(session.access_token, compressed, jobId, 'check_in', locationId, profileId!)
       setCheckInPhoto(url)
-    } catch {
-      setError('Failed to upload photo')
+    } catch (err) {
+      setError(friendlyError(err, 'upload'))
     } finally {
       setIsUploadingPhoto(false)
     }

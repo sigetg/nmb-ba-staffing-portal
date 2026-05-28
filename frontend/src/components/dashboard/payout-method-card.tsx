@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from '@/components/ui'
 import { disconnectPaypal, getPayoutMethod, getPaypalConnectUrl } from '@/lib/api'
+import { friendlyError } from '@/lib/error-message'
 
 export function PayoutMethodCard() {
   const supabase = createClient()
@@ -50,7 +51,7 @@ export function PayoutMethodCard() {
       if (paypalStatus === 'cancelled') {
         setError("You cancelled the PayPal connect. Try again when you're ready.")
       } else if (paypalStatus === 'error') {
-        setError("Something went wrong connecting PayPal. Please try again.")
+        setError(friendlyError(new Error('PayPal OAuth callback returned error'), 'payout'))
       }
     }
 
@@ -67,7 +68,7 @@ export function PayoutMethodCard() {
       const { url } = await getPaypalConnectUrl(accessToken, '/dashboard/profile#payout')
       window.location.href = url
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start PayPal connect')
+      setError(friendlyError(err, 'payout'))
       setBusy(false)
     }
   }
