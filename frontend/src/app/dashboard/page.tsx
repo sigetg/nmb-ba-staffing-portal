@@ -37,6 +37,7 @@ async function getDashboardData(profileId: string) {
       .from('job_applications')
       .select('*, jobs(*, job_days(date))')
       .eq('ba_id', profileId)
+      .neq('status', 'withdrawn')
       .order('applied_at', { ascending: false })
       .limit(5),
     supabase

@@ -360,6 +360,34 @@ def send_application_rejected_email(
     return _send_email(to_email, "NMB Media - Application Update", body)
 
 
+def send_application_removed_email(
+    to_email: str,
+    name: str | None,
+    job_title: str,
+    job_date: str,
+    job_location: str,
+) -> bool:
+    first = _first_name(name)
+    body = f"""
+    <h2 style="color: #1a1a1a; margin-top: 0;">Hi {first},</h2>
+    <p style="color: #4a4a4a; line-height: 1.6;">
+        We're reaching out to let you know that you've been removed from the
+        following job assignment:
+    </p>
+    <div style="background-color: #f9f9f9; padding: 16px; border-radius: 8px; margin: 16px 0;">
+        <p style="margin: 4px 0; color: #4a4a4a;"><strong>Job:</strong> {job_title}</p>
+        <p style="margin: 4px 0; color: #4a4a4a;"><strong>Date:</strong> {job_date}</p>
+        <p style="margin: 4px 0; color: #4a4a4a;"><strong>Location:</strong> {job_location}</p>
+    </div>
+    <p style="color: #4a4a4a; line-height: 1.6;">
+        You no longer need to show up for this job. If you have any questions
+        about why, please reply to this email and we'll be in touch.
+    </p>
+    {_cta_button("Browse Other Jobs", "/dashboard")}
+    """
+    return _send_email(to_email, f"NMB Media - Update on Your {job_title} Assignment", body)
+
+
 def send_job_reminder_email(
     to_email: str,
     name: str | None,

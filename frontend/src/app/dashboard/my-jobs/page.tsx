@@ -48,6 +48,7 @@ async function getMyJobs(userId: string) {
       .from('job_applications')
       .select('*, jobs(*, job_days(*, job_day_locations(*)))')
       .eq('ba_id', profile.id)
+      .neq('status', 'withdrawn')
       .order('applied_at', { ascending: false }),
     supabase
       .from('location_check_ins')
