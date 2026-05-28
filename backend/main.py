@@ -1,7 +1,19 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, auth, bas, files, health, job_types, jobs, profile, qbo, reports, webhooks
+from app.api import (
+    admin,
+    auth,
+    bas,
+    files,
+    health,
+    job_types,
+    jobs,
+    profile,
+    qbo,
+    reports,
+    webhooks,
+)
 from app.core.config import settings
 
 # Initialize Sentry before the FastAPI app so middleware can hook into requests.

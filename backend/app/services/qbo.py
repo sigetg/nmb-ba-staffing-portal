@@ -8,6 +8,7 @@ Single-tenant for now: one row in qbo_connection. Operations look up that row.
 
 import logging
 import time
+from datetime import UTC
 from typing import Any
 from urllib.parse import urlencode
 
@@ -157,9 +158,9 @@ def disconnect(supabase) -> None:
 
 
 def _iso_in(seconds: int) -> str:
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat()
+    return (datetime.now(UTC) + timedelta(seconds=seconds)).isoformat()
 
 
 # --- Authenticated request helper ---
@@ -170,15 +171,15 @@ def _ensure_access_token(supabase, conn: dict) -> tuple[str, dict]:
     expires_at = conn.get("access_token_expires_at")
     cached = conn.get("access_token_cache")
     if cached and expires_at:
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         try:
             exp = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-            if exp > datetime.now(timezone.utc).replace(microsecond=0).astimezone(exp.tzinfo or timezone.utc):
+            if exp > datetime.now(UTC).replace(microsecond=0).astimezone(exp.tzinfo or UTC):
                 # Add a 60-second safety margin
                 from datetime import timedelta
 
-                if exp - timedelta(seconds=60) > datetime.now(timezone.utc):
+                if exp - timedelta(seconds=60) > datetime.now(UTC):
                     return cached, conn
         except (ValueError, TypeError):
             pass

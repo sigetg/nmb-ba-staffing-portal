@@ -9,7 +9,8 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Request
 
 from app.core.supabase import get_supabase_client
-from app.services import paypal, payouts as payouts_svc, qbo_sync
+from app.services import payouts as payouts_svc
+from app.services import paypal, qbo_sync
 
 logger = logging.getLogger(__name__)
 

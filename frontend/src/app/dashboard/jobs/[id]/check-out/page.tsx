@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useRef, use } from 'react'
+import { useEffect, useRef, useState, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 
 export default function CheckOutPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const errorRef = useRef<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const loadedRef = useRef(false)
   const router = useRouter()
   const supabase = createClient()
@@ -23,7 +23,7 @@ export default function CheckOutPage({ params }: { params: Promise<{ id: string 
         .eq('user_id', user.id)
         .maybeSingle()
 
-      if (!profile) { errorRef.current = 'Profile not found'; loadedRef.current = true; return }
+      if (!profile) { setError('Profile not found'); loadedRef.current = true; return }
 
       const { data: jobData } = await supabase
         .from('jobs')
@@ -31,7 +31,7 @@ export default function CheckOutPage({ params }: { params: Promise<{ id: string 
         .eq('id', id)
         .single()
 
-      if (!jobData) { errorRef.current = 'Job not found'; loadedRef.current = true; return }
+      if (!jobData) { setError('Job not found'); loadedRef.current = true; return }
 
       const jobDays = jobData.job_days || []
       const allLocationIds = jobDays.flatMap((d: { job_day_locations: { id: string }[] }) =>
@@ -39,7 +39,7 @@ export default function CheckOutPage({ params }: { params: Promise<{ id: string 
       )
 
       if (allLocationIds.length === 0) {
-        errorRef.current = 'No locations configured for this job'
+        setError('No locations configured for this job')
         loadedRef.current = true
         return
       }
@@ -65,10 +65,10 @@ export default function CheckOutPage({ params }: { params: Promise<{ id: string 
     redirect()
   }, [id, router, supabase])
 
-  if (errorRef.current) {
+  if (error) {
     return (
       <div className="text-center py-12">
-        <h2 className="text-xl font-semibold text-gray-900">{errorRef.current}</h2>
+        <h2 className="text-xl font-semibold text-gray-900">{error}</h2>
         <Link href="/dashboard/my-jobs" className="text-primary-400 hover:text-primary-500 mt-2 inline-block">
           Back to my jobs
         </Link>
