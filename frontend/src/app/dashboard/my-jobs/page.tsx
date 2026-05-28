@@ -94,7 +94,7 @@ async function getMyJobs(userId: string) {
   }
 
   return {
-    applications: (applications || []) as Application[],
+    applications: ((applications || []) as Application[]).filter(a => a.jobs !== null),
     activeJobId,
     activeCheckInTime,
     startedJobIds,

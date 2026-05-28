@@ -142,7 +142,9 @@ async function getDashboardData(profileId: string) {
     upcomingJobs: upcomingJobs.slice(0, 3),
     inProgressJobs,
     completedJobs: completedJobs.slice(0, 3),
-    recentApplications: (applications || []) as AppWithJob[],
+    recentApplications: (applications || []).filter(
+      (a): a is AppWithJob => (a as { jobs: unknown }).jobs !== null
+    ) as AppWithJob[],
     activeJob,
   }
 }
