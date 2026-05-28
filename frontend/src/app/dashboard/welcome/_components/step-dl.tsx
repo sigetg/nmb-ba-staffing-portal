@@ -11,6 +11,10 @@ import {
   CardTitle,
 } from '@/components/ui'
 import { uploadDriversLicense, getDriversLicenseStatus } from '@/lib/api'
+import { compressDocument } from '@/lib/compress-image'
+import { friendlyError } from '@/lib/error-message'
+
+const MAX_DL_BYTES = 10 * 1024 * 1024
 
 interface Props {
   accessToken: string
@@ -61,6 +65,11 @@ export function StepDL({ accessToken, onBack, onSubmitted }: Props) {
     const file = e.target.files?.[0]
     if (!file) return
     const setter = side === 'front' ? setFront : setBack
+    if (file.size > MAX_DL_BYTES) {
+      setter(s => ({ ...s, error: 'File must be under 10MB' }))
+      e.target.value = ''
+      return
+    }
     setter({
       uploaded: false,
       uploading: true,
@@ -69,13 +78,14 @@ export function StepDL({ accessToken, onBack, onSubmitted }: Props) {
     })
     setGlobalError(null)
     try {
-      await uploadDriversLicense(accessToken, side, file)
+      const compressed = await compressDocument(file)
+      await uploadDriversLicense(accessToken, side, compressed)
       setter(s => ({ ...s, uploading: false, uploaded: true }))
     } catch (err) {
       setter(s => ({
         ...s,
         uploading: false,
-        error: err instanceof Error ? err.message : 'Upload failed',
+        error: friendlyError(err, 'upload'),
       }))
     }
   }

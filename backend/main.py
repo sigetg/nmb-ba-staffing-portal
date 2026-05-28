@@ -4,6 +4,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import admin, auth, bas, files, health, job_types, jobs, profile, qbo, reports, webhooks
 from app.core.config import settings
 
+# Initialize Sentry before the FastAPI app so middleware can hook into requests.
+if settings.sentry_dsn:
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.environment,
+        traces_sample_rate=0.1,
+        send_default_pii=True,
+    )
+
 app = FastAPI(
     title="NMB BA Staffing Portal API",
     description="Backend API for Brand Ambassador staffing and job management",

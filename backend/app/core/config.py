@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     qbo_redirect_uri: str = ""
     qbo_environment: str = "sandbox"  # 'sandbox' | 'production'
 
+    # Error monitoring (Sentry). Empty disables it.
+    sentry_dsn: str = ""
+
     # Business platform info (used on W-9 PDF as the payer / on 1099-NECs)
     payer_business_name: str = "NMB Media"
     payer_address_line1: str = ""

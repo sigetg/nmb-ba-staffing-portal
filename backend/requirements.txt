@@ -32,6 +32,9 @@ cryptography>=42.0.0,<46.0
 # PDF generation (W-9, 1099-NEC)
 reportlab>=4.0.0,<5.0
 
+# Error monitoring
+sentry-sdk[fastapi]>=2.0.0,<3.0
+
 # ZIP code → city/state lookup (used by backfill_ba_city_state.py)
 uszipcode==1.0.1
 

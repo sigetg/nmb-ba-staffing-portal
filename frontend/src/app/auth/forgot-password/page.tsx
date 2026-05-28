@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Button, Input, Card, CardContent, CardHeader, CardTitle, Alert } from '@/components/ui'
+import { friendlyError } from '@/lib/error-message'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -30,13 +31,14 @@ export default function ForgotPasswordPage() {
       })
 
       if (!res.ok && res.status !== 204) {
-        setError('An unexpected error occurred. Please try again.')
+        const body = await res.json().catch(() => ({}))
+        setError(friendlyError(new Error(body.detail || `API error ${res.status}`), 'auth'))
         return
       }
 
       setSuccess(true)
-    } catch {
-      setError('An unexpected error occurred. Please try again.')
+    } catch (err) {
+      setError(friendlyError(err, 'auth'))
     } finally {
       setIsLoading(false)
     }

@@ -7,8 +7,12 @@ import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Alert } from '@/components/ui'
 import { ChevronLeft, MapPin, Camera, Loader2, CheckCircle2, Navigation } from 'lucide-react'
 import { uploadJobPhoto } from '@/lib/api'
+import { compressImage } from '@/lib/compress-image'
+import { friendlyError } from '@/lib/error-message'
 import { ContactHelpLine } from '@/components/contact-phone'
 import type { JobDayLocation } from '@/types'
+
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024
 
 export default function DepartLocationPage({ params }: { params: Promise<{ id: string; dayId: string; locationId: string }> }) {
   const { id: jobId, dayId, locationId } = use(params)
@@ -88,15 +92,21 @@ export default function DepartLocationPage({ params }: { params: Promise<{ id: s
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !userId || !profileId) return
+    if (file.size > MAX_PHOTO_BYTES) {
+      setError('Photo must be under 5MB')
+      return
+    }
     setIsUploadingPhoto(true)
+    setError(null)
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) { setError('Not authenticated'); return }
 
-      const { url } = await uploadJobPhoto(session.access_token, file, jobId, 'check_out', locationId, profileId!)
+      const compressed = await compressImage(file)
+      const { url } = await uploadJobPhoto(session.access_token, compressed, jobId, 'check_out', locationId, profileId!)
       setDepartPhoto(url)
-    } catch {
-      setError('Failed to upload')
+    } catch (err) {
+      setError(friendlyError(err, 'upload'))
     } finally {
       setIsUploadingPhoto(false)
     }

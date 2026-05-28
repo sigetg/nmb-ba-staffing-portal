@@ -6,6 +6,11 @@ import { User, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Input, Card, CardContent, CardHeader, CardTitle, Alert, Select, MultiSelectSearch, Textarea, AddressFields, type AddressFieldsValue } from '@/components/ui'
 import { uploadBAPhoto, uploadBAResume } from '@/lib/api'
+import { compressImage } from '@/lib/compress-image'
+import { friendlyError } from '@/lib/error-message'
+
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024
+const MAX_RESUME_BYTES = 10 * 1024 * 1024
 
 type Step = 'basic' | 'photos' | 'resume' | 'details' | 'availability'
 
@@ -105,7 +110,7 @@ export default function SetupPage() {
     checkUser()
   }, [supabase, router])
 
-  const handlePhotoChange = (
+  const handlePhotoChange = async (
     e: React.ChangeEvent<HTMLInputElement>,
     setFile: (f: File | null) => void,
     setPreview: (s: string | null) => void
@@ -113,16 +118,18 @@ export default function SetupPage() {
     const file = e.target.files?.[0]
     if (!file) return
 
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > MAX_PHOTO_BYTES) {
       setError('Photo must be under 5MB')
       return
     }
 
-    setFile(file)
+    setError(null)
+    const compressed = await compressImage(file)
+
+    setFile(compressed)
     const reader = new FileReader()
     reader.onloadend = () => setPreview(reader.result as string)
-    reader.readAsDataURL(file)
-    setError(null)
+    reader.readAsDataURL(compressed)
   }
 
   const handleResumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -133,7 +140,7 @@ export default function SetupPage() {
       setError('Please upload a PDF file')
       return
     }
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > MAX_RESUME_BYTES) {
       setError('Resume must be under 10MB')
       return
     }
@@ -197,11 +204,11 @@ export default function SetupPage() {
       if (!session?.access_token) { setError('Not authenticated'); return }
       const token = session.access_token
 
-      // 1. Upload headshot via backend API
-      const { url: headshotUrl } = await uploadBAPhoto(token, headshotFile!, 'headshot')
-
-      // 2. Upload full-length photo via backend API
-      const { url: fullLengthUrl } = await uploadBAPhoto(token, fullLengthFile!, 'full_length')
+      // 1+2. Upload both BA photos in parallel
+      const [{ url: headshotUrl }, { url: fullLengthUrl }] = await Promise.all([
+        uploadBAPhoto(token, headshotFile!, 'headshot'),
+        uploadBAPhoto(token, fullLengthFile!, 'full_length'),
+      ])
 
       // 3. Upload resume (optional)
       let resumeUrl: string | null = null
@@ -268,8 +275,8 @@ export default function SetupPage() {
       ])
 
       router.push('/dashboard')
-    } catch {
-      setError('An unexpected error occurred. Please try again.')
+    } catch (err) {
+      setError(friendlyError(err, 'submit'))
     } finally {
       setIsLoading(false)
     }
