@@ -13,6 +13,7 @@ from app.services.email import (
     get_job_display_info,
     send_application_approved_email,
     send_application_rejected_email,
+    send_application_removed_email,
     send_ba_approved_email,
     send_ba_reinstated_email,
     send_ba_rejected_email,
@@ -426,13 +427,30 @@ async def unassign_ba_from_job(
     ).eq("id", application.data["id"]).execute()
 
     # Update slots_filled
-    job = supabase.table("jobs").select("slots_filled").eq("id", job_id).single().execute()
+    job = (
+        supabase.table("jobs")
+        .select("slots_filled, title, job_days(date, job_day_locations(location, start_time))")
+        .eq("id", job_id)
+        .single()
+        .execute()
+    )
     if job.data and job.data["slots_filled"] > 0:
         supabase.table("jobs").update(
             {
                 "slots_filled": job.data["slots_filled"] - 1,
             }
         ).eq("id", job_id).execute()
+
+    email, name = get_ba_email(supabase, ba_id)
+    if email and job.data:
+        info = get_job_display_info(supabase, job_id, job.data)
+        send_application_removed_email(
+            to_email=email,
+            name=name,
+            job_title=job.data["title"],
+            job_date=info["date"],
+            job_location=info["location"],
+        )
 
     return {"message": "BA unassigned from job"}
 

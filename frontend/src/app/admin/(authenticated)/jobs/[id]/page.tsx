@@ -6,6 +6,7 @@ import { ChevronLeft, Calendar, Clock, MapPin, FileText, Pencil, FileBarChart } 
 import type { Job, JobApplication, JobDay, JobDayLocation, LocationCheckIn, JobType, JobTypeKpi, JobTypeQuestion, JobTypeQuestionOption, CheckoutResponse, CheckoutResponseValue } from '@/types'
 import { ExportCSVButton } from '@/components/ui/export-csv-button'
 import { JobActions } from '@/components/admin/job-actions'
+import { RemoveBAButton } from '@/components/admin/remove-ba-button'
 import { PayoutsCard } from '@/components/admin/payouts-card'
 import { formatJobStatus, getMultiDayDisplayStatus, getJobStatusBadgeVariant, getTimezoneAbbr, parseLocalDate } from '@/lib/utils'
 
@@ -584,6 +585,7 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
                     <th className="text-left py-3 px-4 text-sm font-medium text-primary-400">Check-in</th>
                     <th className="text-left py-3 px-4 text-sm font-medium text-primary-400">Check-out</th>
                     <th className="text-left py-3 px-4 text-sm font-medium text-primary-400">Status</th>
+                    <th className="text-right py-3 px-4 text-sm font-medium text-primary-400">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -613,6 +615,14 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
                           ) : (
                             <Badge variant="warning">Not Checked In</Badge>
                           )}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <RemoveBAButton
+                            jobId={typedJob.id}
+                            baId={app.ba_id}
+                            baName={app.ba_profiles?.name}
+                            jobTitle={typedJob.title}
+                          />
                         </td>
                       </tr>
                     )

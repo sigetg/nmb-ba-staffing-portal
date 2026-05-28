@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button, Card, CardContent, CardHeader, CardTitle, Badge, Alert, Avatar, Textarea, AddressFields, type AddressFieldsValue } from '@/components/ui'
 import { ChevronLeft, Check, X, FileText, Save, Eye, Pencil } from 'lucide-react'
 import { downloadProxiedFile, loginAsBA } from '@/lib/api'
+import { RemoveBAButton } from '@/components/admin/remove-ba-button'
 import type { BAProfile, BAPhoto, JobApplication, JobWithDays } from '@/types'
 import { formatJobStatus, getMultiDayDisplayStatus, getJobStatusBadgeVariant, getJobDateDisplay } from '@/lib/utils'
 
@@ -613,6 +614,7 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
                     <th className="text-left py-3 px-4 text-sm font-medium text-primary-400">Date</th>
                     <th className="text-left py-3 px-4 text-sm font-medium text-primary-400">Pay Rate</th>
                     <th className="text-left py-3 px-4 text-sm font-medium text-primary-400">Status</th>
+                    <th className="text-right py-3 px-4 text-sm font-medium text-primary-400">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -637,6 +639,15 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
                         <Badge variant={getJobStatusBadgeVariant(jobDisplayStatus)}>
                           {formatJobStatus(jobDisplayStatus)}
                         </Badge>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <RemoveBAButton
+                          jobId={aj.jobs.id}
+                          baId={id}
+                          baName={profile?.name}
+                          jobTitle={aj.jobs.title}
+                          onSuccess={loadProfile}
+                        />
                       </td>
                     </tr>
                     )
