@@ -22,6 +22,8 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
   const [profile, setProfile] = useState<BAProfile | null>(null)
   const [photos, setPhotos] = useState<BAPhoto[]>([])
   const [assignedJobs, setAssignedJobs] = useState<AssignedJob[]>([])
+  const [withdrawnJobs, setWithdrawnJobs] = useState<AssignedJob[]>([])
+  const [reassigningAppId, setReassigningAppId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isUpdating, setIsUpdating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -89,6 +91,16 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
         .eq('status', 'approved')
 
       setAssignedJobs((assignedData || []) as AssignedJob[])
+
+      // Get withdrawn applications (BAs that were previously removed from jobs and can be reassigned)
+      const { data: withdrawnData } = await supabase
+        .from('job_applications')
+        .select('*, jobs(*, job_days(*, job_day_locations(*)))')
+        .eq('ba_id', id)
+        .eq('status', 'withdrawn')
+        .order('reviewed_at', { ascending: false })
+
+      setWithdrawnJobs((withdrawnData || []) as AssignedJob[])
     } catch {
       setError('Failed to load BA profile')
     } finally {
@@ -193,6 +205,43 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
       setError('Failed to save address')
     } finally {
       setIsSavingAddress(false)
+    }
+  }
+
+  const reassignApplication = async (applicationId: string) => {
+    setError(null)
+    setSuccess(null)
+    setReassigningAppId(applicationId)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setError('Not authenticated')
+        return
+      }
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const res = await fetch(`${apiUrl}/api/admin/applications/${applicationId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ status: 'approved', notes: null }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.detail || 'Failed to reassign BA')
+        return
+      }
+
+      setSuccess('BA reassigned — assignment email sent')
+      await loadProfile()
+    } catch {
+      setError('Failed to reassign BA')
+    } finally {
+      setReassigningAppId(null)
     }
   }
 
@@ -658,6 +707,62 @@ export default function BADetailPage({ params }: { params: Promise<{ id: string 
           )}
         </CardContent>
       </Card>
+
+      {/* Previously Removed Jobs (withdrawn applications — admin can reassign) */}
+      {withdrawnJobs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Previously Removed Jobs ({withdrawnJobs.length})</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50">
+                    <th className="text-left py-3 px-4 text-sm font-medium text-primary-400">Job Title</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-primary-400">Brand</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-primary-400">Date</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-primary-400">Removed On</th>
+                    <th className="text-right py-3 px-4 text-sm font-medium text-primary-400">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {withdrawnJobs.map((wj) => (
+                    <tr key={wj.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-3 px-4 text-sm">
+                        <Link
+                          href={`/admin/jobs/${wj.jobs.id}`}
+                          className="text-primary-400 hover:text-primary-500"
+                        >
+                          {wj.jobs.title}
+                        </Link>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-900">{wj.jobs.brand}</td>
+                      <td className="py-3 px-4 text-sm text-gray-900">
+                        {getJobDateDisplay(wj.jobs)}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-900">
+                        {wj.reviewed_at ? new Date(wj.reviewed_at).toLocaleDateString() : '—'}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          isLoading={reassigningAppId === wj.id}
+                          onClick={() => reassignApplication(wj.id)}
+                        >
+                          <Check className="w-4 h-4 mr-1" />
+                          Reassign
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Admin Notes */}
       <Card>

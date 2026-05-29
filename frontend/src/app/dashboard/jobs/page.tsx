@@ -62,11 +62,12 @@ async function getAvailableJobs(userId: string) {
     })
   }
 
-  // Get user's applications
+  // Get user's applications (excluding withdrawn — those don't block re-applying)
   const { data: applications } = await supabase
     .from('job_applications')
     .select('job_id, status')
     .eq('ba_id', profile?.id || '')
+    .neq('status', 'withdrawn')
 
   const appliedJobIds = new Set(applications?.map(a => a.job_id) || [])
   const applicationStatuses = Object.fromEntries(
