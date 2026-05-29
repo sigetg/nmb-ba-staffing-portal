@@ -409,7 +409,10 @@ async def paypal_callback(
     try:
         info = paypal.exchange_login_code(code, redirect_uri=_paypal_login_redirect_uri())
     except Exception as exc:
-        logger.error("PayPal Login exchange failed: %s", exc)
+        # PayPal can return errors for benign reasons (auth code reuse,
+        # session expired mid-OAuth, sandbox/live mismatch). The friendly
+        # ?paypal=error redirect handles the UX, so don't treat as server bug.
+        logger.warning("PayPal Login exchange failed: %s", exc)
         return _paypal_redirect(return_to, {"paypal": "error"})
 
     email = info.get("email")
