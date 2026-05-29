@@ -111,7 +111,10 @@ async def get_current_user(
             user_id = user_response.user.id
             email = user_response.user.email or ""
         except Exception as e2:
-            logger.error("Supabase auth fallback also failed: %s", e2)
+            # Expected when a user's session has expired; raise a clean 401 and
+            # let the frontend redirect to login. Logged at warning to avoid
+            # treating session lifecycle as a server error.
+            logger.warning("Supabase auth fallback also failed: %s", e2)
             raise credentials_exception from e2
 
     # Get user data from database
