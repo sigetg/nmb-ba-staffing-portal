@@ -118,9 +118,7 @@ def get_job_display_info(supabase, job_id: str, job_data: dict | None = None) ->
     sorted_days = sorted(days, key=lambda d: d["date"])
     first, last = sorted_days[0], sorted_days[-1]
 
-    date = (
-        first["date"] if first["date"] == last["date"] else f"{first['date']} to {last['date']}"
-    )
+    date = first["date"] if first["date"] == last["date"] else f"{first['date']} to {last['date']}"
 
     location = ""
     start_time = ""
@@ -184,7 +182,13 @@ def send_payment_sent_email(
 ) -> bool:
     """Notify a BA that a payment has been sent / completed."""
     first = _first_name(name)
-    method_label = "ACH (Direct Deposit)" if method == "ach_batch" else "PayPal/Venmo" if method == "paypal" else method
+    method_label = (
+        "ACH (Direct Deposit)"
+        if method == "ach_batch"
+        else "PayPal/Venmo"
+        if method == "paypal"
+        else method
+    )
     eta = "1-3 business days" if method == "ach_batch" else "instantly"
     body = f"""
     <h2 style="color: #1a1a1a; margin-top: 0;">Payment sent, {first}!</h2>

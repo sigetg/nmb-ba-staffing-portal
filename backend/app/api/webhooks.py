@@ -50,9 +50,8 @@ async def paypal_webhook(request: Request):
     event_type = event.get("event_type", "")
     resource = event.get("resource", {}) or {}
     payout_item_id = resource.get("payout_item_id") or resource.get("item_id")
-    sender_item_id = (
-        (resource.get("payout_item") or {}).get("sender_item_id")
-        or resource.get("sender_item_id")
+    sender_item_id = (resource.get("payout_item") or {}).get("sender_item_id") or resource.get(
+        "sender_item_id"
     )
 
     if not payout_item_id and not sender_item_id:
@@ -85,7 +84,8 @@ async def paypal_webhook(request: Request):
     if not rows:
         logger.warning(
             "PayPal webhook for unknown payout_item_id=%s sender_item_id=%s",
-            payout_item_id, sender_item_id,
+            payout_item_id,
+            sender_item_id,
         )
         return {"received": True, "matched": False}
 
@@ -126,4 +126,9 @@ async def paypal_webhook(request: Request):
         except Exception as exc:
             logger.warning("enqueue_payment_sync failed for %s: %s", payment_id, exc)
 
-    return {"received": True, "matched": True, "payment_id": payment_id, "new_status": update["status"]}
+    return {
+        "received": True,
+        "matched": True,
+        "payment_id": payment_id,
+        "new_status": update["status"],
+    }

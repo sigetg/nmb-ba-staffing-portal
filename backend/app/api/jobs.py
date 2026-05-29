@@ -3,6 +3,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from postgrest.types import CountMethod
 from pydantic import BaseModel
 from timezonefinder import TimezoneFinder
 
@@ -173,7 +174,9 @@ async def list_jobs(
     """List all jobs with optional filters."""
     supabase = get_supabase_client()
 
-    query = supabase.table("jobs").select("*, job_days(*, job_day_locations(*))", count="exact")
+    query = supabase.table("jobs").select(
+        "*, job_days(*, job_day_locations(*))", count=CountMethod.exact
+    )
 
     # Filter by status
     if status:
@@ -526,9 +529,7 @@ async def check_in(
     )
 
     if existing.data:
-        raise HTTPException(
-            status_code=400, detail="You have already checked in to this location"
-        )
+        raise HTTPException(status_code=400, detail="You have already checked in to this location")
 
     # Validate GPS distance
     distance = None

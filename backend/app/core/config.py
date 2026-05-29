@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # CORS - stored as comma-separated string to avoid pydantic-settings JSON parsing
     cors_origins: str = "http://localhost:3007,http://127.0.0.1:3007"
 
-    @computed_field
+    @computed_field  # type: ignore[misc]
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

@@ -4,6 +4,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
+from postgrest.types import CountMethod
 from pydantic import BaseModel
 
 from app.core.auth import CurrentUser, get_current_admin
@@ -95,13 +96,13 @@ async def qbo_status(
 
     pending = (
         supabase.table("qbo_sync_queue")
-        .select("status", count="exact")
+        .select("status", count=CountMethod.exact)
         .eq("status", "pending")
         .execute()
     )
     manual = (
         supabase.table("qbo_sync_queue")
-        .select("status", count="exact")
+        .select("status", count=CountMethod.exact)
         .eq("status", "manual_review")
         .execute()
     )
@@ -146,9 +147,9 @@ async def qbo_settings(
     conn = qbo.get_connection(supabase)
     if not conn:
         raise HTTPException(status_code=400, detail="QBO not connected")
-    supabase.table("qbo_connection").update(
-        {"expense_account_id": payload.expense_account_id}
-    ).eq("id", conn["id"]).execute()
+    supabase.table("qbo_connection").update({"expense_account_id": payload.expense_account_id}).eq(
+        "id", conn["id"]
+    ).execute()
     return {"ok": True}
 
 

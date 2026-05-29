@@ -147,7 +147,9 @@ def post_payment(supabase, *, payment_id: str) -> str:
     """Create a Purchase entity in QBO for a completed payment. Returns qbo_purchase_id."""
     payment = (
         supabase.table("payments")
-        .select("id, ba_id, job_id, amount, hours_worked, payment_method, qbo_purchase_id, jobs(title)")
+        .select(
+            "id, ba_id, job_id, amount, hours_worked, payment_method, qbo_purchase_id, jobs(title)"
+        )
         .eq("id", payment_id)
         .single()
         .execute()
@@ -179,9 +181,7 @@ def post_payment(supabase, *, payment_id: str) -> str:
             {
                 "DetailType": "AccountBasedExpenseLineDetail",
                 "Amount": amount,
-                "AccountBasedExpenseLineDetail": {
-                    "AccountRef": {"value": expense_account_id}
-                },
+                "AccountBasedExpenseLineDetail": {"AccountRef": {"value": expense_account_id}},
             }
         ],
         "PrivateNote": f"Job: {job_title} | PaymentID: {p['id']} | Hours: {p.get('hours_worked')}",
@@ -192,7 +192,9 @@ def post_payment(supabase, *, payment_id: str) -> str:
     purchase_id = created.get("Id")
     if not purchase_id:
         raise RuntimeError("QBO purchase create did not return an Id")
-    supabase.table("payments").update({"qbo_purchase_id": purchase_id}).eq("id", payment_id).execute()
+    supabase.table("payments").update({"qbo_purchase_id": purchase_id}).eq(
+        "id", payment_id
+    ).execute()
     return purchase_id
 
 

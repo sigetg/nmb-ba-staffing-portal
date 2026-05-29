@@ -83,7 +83,9 @@ def generate_w9_pdf(
     y -= 0.3 * inch
 
     pdf.setFont("Helvetica-Bold", 10)
-    pdf.drawString(margin_x, y, "2. Business name / disregarded entity name (if different from above)")
+    pdf.drawString(
+        margin_x, y, "2. Business name / disregarded entity name (if different from above)"
+    )
     y -= 0.2 * inch
     pdf.setFont("Helvetica", 11)
     pdf.drawString(margin_x + 0.1 * inch, y, business_name or "—")
@@ -93,9 +95,7 @@ def generate_w9_pdf(
     pdf.drawString(margin_x, y, "3. Federal tax classification")
     y -= 0.2 * inch
     pdf.setFont("Helvetica", 11)
-    pdf.drawString(
-        margin_x + 0.1 * inch, y, ENTITY_TYPE_LABELS.get(entity_type, entity_type)
-    )
+    pdf.drawString(margin_x + 0.1 * inch, y, ENTITY_TYPE_LABELS.get(entity_type, entity_type))
     y -= 0.4 * inch
 
     # Address
@@ -121,11 +121,17 @@ def generate_w9_pdf(
     pdf.rect(margin_x, y - 0.15 * inch, width - 2 * margin_x, 0.25 * inch, fill=1, stroke=0)
     pdf.setFillColorRGB(0, 0, 0)
     pdf.setFont("Helvetica-Bold", 11)
-    pdf.drawString(margin_x + 0.1 * inch, y - 0.05 * inch, "Part I — Taxpayer Identification Number (TIN)")
+    pdf.drawString(
+        margin_x + 0.1 * inch, y - 0.05 * inch, "Part I — Taxpayer Identification Number (TIN)"
+    )
     y -= 0.5 * inch
 
     pdf.setFont("Helvetica-Bold", 10)
-    label = "Social Security Number (SSN)" if tin_type == "ssn" else "Employer Identification Number (EIN)"
+    label = (
+        "Social Security Number (SSN)"
+        if tin_type == "ssn"
+        else "Employer Identification Number (EIN)"
+    )
     pdf.drawString(margin_x, y, label)
     y -= 0.22 * inch
     pdf.setFont("Helvetica", 13)

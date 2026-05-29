@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -107,8 +109,8 @@ async def generate_report(
         per_ba_responses[key]["values"].extend(resp.get("checkout_response_values", []))
 
     # Aggregate KPI data
-    kpi_aggregates = {}
-    mc_aggregates = {}
+    kpi_aggregates: dict[str, dict[str, Any]] = {}
+    mc_aggregates: dict[str, dict[str, Any]] = {}
 
     for resp in responses.data or []:
         for val in resp.get("checkout_response_values", []):

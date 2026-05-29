@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from postgrest.types import CountMethod
 from pydantic import BaseModel
 
 from app.core.auth import CurrentUser, get_current_admin
@@ -93,16 +94,18 @@ async def get_dashboard(
     # Get counts
     pending_bas = (
         supabase.table("ba_profiles")
-        .select("*", count="exact", head=True)
+        .select("*", count=CountMethod.exact, head=True)
         .eq("status", "pending")
         .execute()
     )
 
-    total_bas = supabase.table("ba_profiles").select("*", count="exact", head=True).execute()
+    total_bas = (
+        supabase.table("ba_profiles").select("*", count=CountMethod.exact, head=True).execute()
+    )
 
     active_jobs = (
         supabase.table("jobs")
-        .select("*", count="exact", head=True)
+        .select("*", count=CountMethod.exact, head=True)
         .eq("status", "published")
         .execute()
     )
@@ -110,7 +113,7 @@ async def get_dashboard(
     today = datetime.utcnow().date().isoformat()
     upcoming_jobs = (
         supabase.table("job_days")
-        .select("job_id, jobs!inner(status)", count="exact", head=True)
+        .select("job_id, jobs!inner(status)", count=CountMethod.exact, head=True)
         .gte("date", today)
         .eq("jobs.status", "published")
         .execute()
@@ -118,7 +121,7 @@ async def get_dashboard(
 
     pending_applications = (
         supabase.table("job_applications")
-        .select("*", count="exact", head=True)
+        .select("*", count=CountMethod.exact, head=True)
         .eq("status", "pending")
         .execute()
     )
@@ -396,12 +399,7 @@ async def unassign_ba_from_job(
         raise HTTPException(status_code=400, detail="BA is not currently assigned to this job")
 
     # Check for existing check-in at any location in this job
-    loc_ids_result = (
-        supabase.table("job_day_locations")
-        .select("id")
-        .eq("job_id", job_id)
-        .execute()
-    )
+    loc_ids_result = supabase.table("job_day_locations").select("id").eq("job_id", job_id).execute()
     loc_ids = [r["id"] for r in (loc_ids_result.data or [])]
     if loc_ids:
         checkin = (
@@ -670,8 +668,19 @@ async def get_job_attendance(
         ba_check_ins = [ci for ci in location_check_ins if ci["ba_id"] == ba["ba_id"]]
         has_checked_in = len(ba_check_ins) > 0
         has_checked_out = any(ci.get("check_out_time") for ci in ba_check_ins)
-        first_check_in = min((ci["check_in_time"] for ci in ba_check_ins), default=None) if ba_check_ins else None
-        last_check_out = max((ci["check_out_time"] for ci in ba_check_ins if ci.get("check_out_time")), default=None) if ba_check_ins else None
+        first_check_in = (
+            min((ci["check_in_time"] for ci in ba_check_ins), default=None)
+            if ba_check_ins
+            else None
+        )
+        last_check_out = (
+            max(
+                (ci["check_out_time"] for ci in ba_check_ins if ci.get("check_out_time")),
+                default=None,
+            )
+            if ba_check_ins
+            else None
+        )
         attendance.append(
             {
                 **ba,
@@ -704,13 +713,7 @@ async def get_job_payout_summary(
     """
     supabase = get_supabase_client()
 
-    job = (
-        supabase.table("jobs")
-        .select("id, title, pay_rate")
-        .eq("id", job_id)
-        .single()
-        .execute()
-    )
+    job = supabase.table("jobs").select("id, title, pay_rate").eq("id", job_id).single().execute()
     if not job.data:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -957,9 +960,7 @@ async def get_payouts_pending_jobs(
         .execute()
     )
     completed_pairs: set[tuple[str, str]] = {
-        (p["job_id"], p["ba_id"])
-        for p in (pmts_res.data or [])
-        if p.get("status") == "completed"
+        (p["job_id"], p["ba_id"]) for p in (pmts_res.data or []) if p.get("status") == "completed"
     }
 
     unpaid_by_job: dict[str, int] = {}
@@ -973,7 +974,9 @@ async def get_payouts_pending_jobs(
             continue
         out.append({**j, "unpaid_count": unpaid_by_job[j["id"]]})
     out.sort(
-        key=lambda j: max((d["date"] for d in (j.get("job_days") or []) if d.get("date")), default=""),
+        key=lambda j: max(
+            (d["date"] for d in (j.get("job_days") or []) if d.get("date")), default=""
+        ),
         reverse=True,
     )
     return {"jobs": out}
@@ -991,7 +994,9 @@ async def list_payments(
     """List payment history."""
     supabase = get_supabase_client()
 
-    query = supabase.table("payments").select("*, ba_profiles(name), jobs(title)", count="exact")
+    query = supabase.table("payments").select(
+        "*, ba_profiles(name), jobs(title)", count=CountMethod.exact
+    )
 
     if job_id:
         query = query.eq("job_id", job_id)
@@ -1098,7 +1103,7 @@ async def get_bas_report(
             .execute()
         )
 
-        total_hours = 0
+        total_hours = 0.0
         for checkin in checkins.data or []:
             if checkin["check_in_time"] and checkin["check_out_time"]:
                 check_in = datetime.fromisoformat(checkin["check_in_time"].replace("Z", "+00:00"))
