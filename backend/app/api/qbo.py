@@ -146,9 +146,9 @@ async def qbo_settings(
     conn = qbo.get_connection(supabase)
     if not conn:
         raise HTTPException(status_code=400, detail="QBO not connected")
-    supabase.table("qbo_connection").update(
-        {"expense_account_id": payload.expense_account_id}
-    ).eq("id", conn["id"]).execute()
+    supabase.table("qbo_connection").update({"expense_account_id": payload.expense_account_id}).eq(
+        "id", conn["id"]
+    ).execute()
     return {"ok": True}
 
 

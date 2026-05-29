@@ -132,12 +132,7 @@ def save_connection(
     if connected_by:
         payload["connected_by"] = connected_by
     if existing:
-        res = (
-            supabase.table("qbo_connection")
-            .update(payload)
-            .eq("id", existing["id"])
-            .execute()
-        )
+        res = supabase.table("qbo_connection").update(payload).eq("id", existing["id"]).execute()
         return (res.data or [None])[0]
     payload["connected_at"] = "now()"
     res = supabase.table("qbo_connection").insert(payload).execute()
@@ -234,9 +229,13 @@ def request(
     )
     if resp.status_code == 401:
         # token might have just expired; one retry after force-refresh
-        access_token, conn = _ensure_access_token(supabase, {**conn, "access_token_expires_at": None})
+        access_token, conn = _ensure_access_token(
+            supabase, {**conn, "access_token_expires_at": None}
+        )
         headers["Authorization"] = f"Bearer {access_token}"
-        resp = httpx.request(method, full_url, params=params, json=json, headers=headers, timeout=30.0)
+        resp = httpx.request(
+            method, full_url, params=params, json=json, headers=headers, timeout=30.0
+        )
     if resp.status_code >= 400:
         raise RuntimeError(f"QBO {method} {path} → {resp.status_code}: {resp.text[:500]}")
     return resp.json() if resp.content else {}

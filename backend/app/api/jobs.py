@@ -526,9 +526,7 @@ async def check_in(
     )
 
     if existing.data:
-        raise HTTPException(
-            status_code=400, detail="You have already checked in to this location"
-        )
+        raise HTTPException(status_code=400, detail="You have already checked in to this location")
 
     # Validate GPS distance
     distance = None

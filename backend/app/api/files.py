@@ -78,9 +78,7 @@ async def upload_job_photo(
     timestamp = int(time.time() * 1000)
     ba_name = _get_ba_name(current_user)
     job_title = _get_job_title(job_id)
-    dropbox_path = (
-        f"{PORTAL_ROOT}/job-photos/{ba_name}_{current_user.id}/{job_title}_{job_id}/{photo_type}-{timestamp}.{ext}"
-    )
+    dropbox_path = f"{PORTAL_ROOT}/job-photos/{ba_name}_{current_user.id}/{job_title}_{job_id}/{photo_type}-{timestamp}.{ext}"
 
     url = dropbox_storage.upload_file(file_bytes, dropbox_path)
 

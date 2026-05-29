@@ -117,13 +117,7 @@ class DriversLicenseStatus(BaseModel):
 
 
 def _get_ba_profile(supabase, user_id: str) -> dict:
-    res = (
-        supabase.table("ba_profiles")
-        .select("*")
-        .eq("user_id", user_id)
-        .maybe_single()
-        .execute()
-    )
+    res = supabase.table("ba_profiles").select("*").eq("user_id", user_id).maybe_single().execute()
     if not res or not res.data:
         raise HTTPException(status_code=404, detail="BA profile not found")
     return res.data
@@ -377,9 +371,7 @@ async def paypal_connect_url(
         raise HTTPException(status_code=403, detail="Only BAs can connect PayPal")
     safe_return_to = _validate_return_to(return_to)
     state = sign_oauth_state(current_user.id, purpose="paypal", return_to=safe_return_to)
-    url = paypal.get_login_oauth_url(
-        state=state, redirect_uri=_paypal_login_redirect_uri()
-    )
+    url = paypal.get_login_oauth_url(state=state, redirect_uri=_paypal_login_redirect_uri())
     return {"url": url}
 
 
@@ -421,13 +413,7 @@ async def paypal_callback(
         return _paypal_redirect(return_to, {"paypal": "error"})
 
     supabase = get_supabase_client()
-    res = (
-        supabase.table("ba_profiles")
-        .select("id")
-        .eq("user_id", user_id)
-        .maybe_single()
-        .execute()
-    )
+    res = supabase.table("ba_profiles").select("id").eq("user_id", user_id).maybe_single().execute()
     if not res or not res.data:
         raise HTTPException(status_code=404, detail="BA profile not found")
 

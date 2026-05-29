@@ -58,9 +58,7 @@ def last4(value: str) -> str:
 # --- OAuth state (stateless, HMAC-signed) ---
 
 
-def sign_oauth_state(
-    user_id: str, *, purpose: str = "oauth", return_to: str | None = None
-) -> str:
+def sign_oauth_state(user_id: str, *, purpose: str = "oauth", return_to: str | None = None) -> str:
     """Pack (user_id, optional return_to, nonce) into an HMAC-signed state string.
 
     Avoids needing cookies (which fail cross-site) by carrying everything in

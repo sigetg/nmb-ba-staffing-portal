@@ -32,16 +32,11 @@ _token_cache: dict[str, Any] = {"access_token": None, "expires_at": 0.0}
 
 def get_access_token() -> str:
     """Fetch and cache a PayPal OAuth2 access token."""
-    if (
-        _token_cache["access_token"]
-        and time.time() < _token_cache["expires_at"] - 60
-    ):
+    if _token_cache["access_token"] and time.time() < _token_cache["expires_at"] - 60:
         return _token_cache["access_token"]
 
     if not settings.paypal_client_id or not settings.paypal_client_secret:
-        raise RuntimeError(
-            "PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET not configured"
-        )
+        raise RuntimeError("PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET not configured")
 
     resp = httpx.post(
         f"{_base_url()}/v1/oauth2/token",

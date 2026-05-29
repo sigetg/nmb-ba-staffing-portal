@@ -134,9 +134,7 @@ def send_paypal_payouts(supabase, *, payment_ids: list[str], paid_by: str | None
             update["paypal_item_id"] = pp_item.get("payout_item_id") or pp_item.get(
                 "sender_item_id"
             )
-            update["payment_reference"] = (
-                f"{paypal_batch_id}/{update.get('paypal_item_id', '')}"
-            )
+            update["payment_reference"] = f"{paypal_batch_id}/{update.get('paypal_item_id', '')}"
         supabase.table("payments").update(update).eq("id", p["id"]).execute()
 
     return {
