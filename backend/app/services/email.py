@@ -334,7 +334,7 @@ def send_application_approved_email(
         </p>
     </div>
     <p style="color: #4a4a4a; line-height: 1.6;">
-        Please make sure to arrive on time. If you have any questions, reply to this email.
+        Please make sure to arrive on time. If you have any questions, use the contact number on your dashboard.
     </p>
     {_cta_button("View Job Details", f"/dashboard/jobs/{job_id}")}
     """
@@ -385,7 +385,7 @@ def send_application_removed_email(
     </div>
     <p style="color: #4a4a4a; line-height: 1.6;">
         You no longer need to show up for this job. If you have any questions
-        about why, please reply to this email and we'll be in touch.
+        about why, please use the contact number on your dashboard.
     </p>
     {_cta_button("Browse Other Jobs", "/dashboard")}
     """
