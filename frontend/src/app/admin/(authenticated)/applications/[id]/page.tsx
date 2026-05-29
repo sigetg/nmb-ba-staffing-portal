@@ -451,6 +451,37 @@ export default function ApplicationReviewPage({ params }: { params: Promise<{ id
             </div>
           </CardContent>
         </Card>
+      ) : application.status === 'withdrawn' ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Reassign to Job</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-primary-400">
+              This BA was previously removed from this job. Reassigning will approve them
+              again and send them a fresh assignment email with the job details.
+            </p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Notes (included in notification email)
+              </label>
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Add notes about this reassignment (optional)..."
+                rows={3}
+              />
+            </div>
+            <Button
+              onClick={() => handleAction('approved')}
+              isLoading={isUpdating}
+              className="flex-1 sm:flex-none"
+            >
+              <Check className="w-5 h-5 mr-2" />
+              Reassign
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
         <Card>
           <CardHeader>

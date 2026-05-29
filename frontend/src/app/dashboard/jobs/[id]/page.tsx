@@ -76,7 +76,8 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
 
       setProfile(profileData)
 
-      // Load application if exists
+      // Load application if exists. Withdrawn applications are treated as "no application"
+      // so the user can re-apply.
       if (profileData) {
         const { data: appData } = await supabase
           .from('job_applications')
@@ -85,7 +86,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           .eq('ba_id', profileData.id)
           .maybeSingle()
 
-        setApplication(appData)
+        setApplication(appData && appData.status !== 'withdrawn' ? appData : null)
 
         // --- Compute check-in state, job completion, and checkout responses ---
         const today = getLocalToday()
@@ -177,24 +178,61 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     setIsApplying(true)
 
     try {
-      const { data, error: applyError } = await supabase
+      // If a previously-withdrawn row exists for this (ba, job), revive it instead
+      // of inserting (the table has UNIQUE(job_id, ba_id)).
+      const { data: existing } = await supabase
         .from('job_applications')
-        .insert({
-          job_id: job.id,
-          ba_id: profile.id,
-          status: 'pending',
-          applied_at: new Date().toISOString(),
-        })
-        .select()
-        .single()
+        .select('id, status')
+        .eq('job_id', job.id)
+        .eq('ba_id', profile.id)
+        .maybeSingle()
 
-      if (applyError) {
-        if (applyError.code === '23505') {
-          setError('You have already applied to this job')
-        } else {
-          setError(applyError.message)
-        }
+      if (existing && existing.status !== 'withdrawn') {
+        setError('You have already applied to this job')
         return
+      }
+
+      let data: JobApplication | null = null
+      if (existing) {
+        const { data: updated, error: updateError } = await supabase
+          .from('job_applications')
+          .update({
+            status: 'pending',
+            applied_at: new Date().toISOString(),
+            reviewed_at: null,
+            reviewed_by: null,
+            notes: null,
+          })
+          .eq('id', existing.id)
+          .select()
+          .single()
+
+        if (updateError) {
+          setError(updateError.message)
+          return
+        }
+        data = updated
+      } else {
+        const { data: inserted, error: applyError } = await supabase
+          .from('job_applications')
+          .insert({
+            job_id: job.id,
+            ba_id: profile.id,
+            status: 'pending',
+            applied_at: new Date().toISOString(),
+          })
+          .select()
+          .single()
+
+        if (applyError) {
+          if (applyError.code === '23505') {
+            setError('You have already applied to this job')
+          } else {
+            setError(applyError.message)
+          }
+          return
+        }
+        data = inserted
       }
 
       setApplication(data)

@@ -544,7 +544,11 @@ export default async function AdminJobDetailPage({ params }: { params: Promise<{
                           href={`/admin/applications/${app.id}`}
                           className={`text-sm ${app.status === 'approved' ? 'text-gray-400 hover:text-gray-500' : 'text-primary-400 hover:text-primary-500'}`}
                         >
-                          {app.status === 'approved' ? 'View' : 'Review'}
+                          {app.status === 'approved'
+                            ? 'View'
+                            : app.status === 'withdrawn'
+                            ? 'Reassign'
+                            : 'Review'}
                         </Link>
                       </td>
                     </tr>
