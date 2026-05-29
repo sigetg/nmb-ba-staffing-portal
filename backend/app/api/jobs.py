@@ -3,6 +3,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from postgrest.types import CountMethod
 from pydantic import BaseModel
 from timezonefinder import TimezoneFinder
 
@@ -173,7 +174,9 @@ async def list_jobs(
     """List all jobs with optional filters."""
     supabase = get_supabase_client()
 
-    query = supabase.table("jobs").select("*, job_days(*, job_day_locations(*))", count="exact")
+    query = supabase.table("jobs").select(
+        "*, job_days(*, job_day_locations(*))", count=CountMethod.exact
+    )
 
     # Filter by status
     if status:

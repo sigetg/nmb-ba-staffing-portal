@@ -1,9 +1,11 @@
 import logging
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
+from postgrest.types import CountMethod
 from pydantic import BaseModel
 
 from app.core.auth import CurrentUser, get_current_admin, get_current_ba
@@ -167,7 +169,7 @@ async def list_bas(
     """List all brand ambassadors (admin only)."""
     supabase = get_supabase_client()
 
-    query = supabase.table("ba_profiles").select("*", count="exact")
+    query = supabase.table("ba_profiles").select("*", count=CountMethod.exact)
 
     if status:
         query = query.eq("status", status.value)
@@ -274,7 +276,7 @@ async def update_profile(
         raise HTTPException(status_code=404, detail="Profile not found")
 
     # Build update data (only include non-None fields)
-    update_data = {}
+    update_data: dict[str, Any] = {}
     if profile.name is not None:
         update_data["name"] = profile.name
     if profile.phone is not None:

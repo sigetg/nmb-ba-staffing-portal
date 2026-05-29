@@ -44,9 +44,10 @@ def _get_jwks() -> dict:
     jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
     response = httpx.get(jwks_url, timeout=10)
     response.raise_for_status()
-    _jwks_cache = response.json()
+    jwks_data: dict = response.json()
+    _jwks_cache = jwks_data
     _jwks_cache_time = now
-    return _jwks_cache
+    return jwks_data
 
 
 def _decode_token_jwks(token: str) -> dict:
@@ -92,8 +93,8 @@ async def get_current_user(
         # Primary: verify via JWKS (works with both ES256 and HS256)
         payload = _decode_token_jwks(token)
 
-        user_id: str = payload.get("sub")
-        email: str = payload.get("email")
+        user_id = payload.get("sub")
+        email = payload.get("email") or ""
 
         if user_id is None:
             raise credentials_exception
@@ -214,6 +215,9 @@ def get_optional_user(
         user_data = supabase.table("users").select("*").eq("id", user_id).maybe_single().execute()
 
         if not user_data or not user_data.data:
+            return None
+
+        if not user_id:
             return None
 
         role = user_data.data.get("role", "ba")

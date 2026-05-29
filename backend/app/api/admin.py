@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from postgrest.types import CountMethod
 from pydantic import BaseModel
 
 from app.core.auth import CurrentUser, get_current_admin
@@ -93,16 +94,18 @@ async def get_dashboard(
     # Get counts
     pending_bas = (
         supabase.table("ba_profiles")
-        .select("*", count="exact", head=True)
+        .select("*", count=CountMethod.exact, head=True)
         .eq("status", "pending")
         .execute()
     )
 
-    total_bas = supabase.table("ba_profiles").select("*", count="exact", head=True).execute()
+    total_bas = (
+        supabase.table("ba_profiles").select("*", count=CountMethod.exact, head=True).execute()
+    )
 
     active_jobs = (
         supabase.table("jobs")
-        .select("*", count="exact", head=True)
+        .select("*", count=CountMethod.exact, head=True)
         .eq("status", "published")
         .execute()
     )
@@ -110,7 +113,7 @@ async def get_dashboard(
     today = datetime.utcnow().date().isoformat()
     upcoming_jobs = (
         supabase.table("job_days")
-        .select("job_id, jobs!inner(status)", count="exact", head=True)
+        .select("job_id, jobs!inner(status)", count=CountMethod.exact, head=True)
         .gte("date", today)
         .eq("jobs.status", "published")
         .execute()
@@ -118,7 +121,7 @@ async def get_dashboard(
 
     pending_applications = (
         supabase.table("job_applications")
-        .select("*", count="exact", head=True)
+        .select("*", count=CountMethod.exact, head=True)
         .eq("status", "pending")
         .execute()
     )
@@ -991,7 +994,9 @@ async def list_payments(
     """List payment history."""
     supabase = get_supabase_client()
 
-    query = supabase.table("payments").select("*, ba_profiles(name), jobs(title)", count="exact")
+    query = supabase.table("payments").select(
+        "*, ba_profiles(name), jobs(title)", count=CountMethod.exact
+    )
 
     if job_id:
         query = query.eq("job_id", job_id)
@@ -1098,7 +1103,7 @@ async def get_bas_report(
             .execute()
         )
 
-        total_hours = 0
+        total_hours = 0.0
         for checkin in checkins.data or []:
             if checkin["check_in_time"] and checkin["check_out_time"]:
                 check_in = datetime.fromisoformat(checkin["check_in_time"].replace("Z", "+00:00"))
