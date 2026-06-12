@@ -175,6 +175,7 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
 
   const handleCheckout = async () => {
     if (!gpsLocation || !checkoutPhoto || !checkInId) return
+    if (!confirm('End your day and submit your shift? You will not be able to make changes after this.')) return
     setIsSubmitting(true)
     setError(null)
 

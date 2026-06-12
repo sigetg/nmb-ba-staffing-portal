@@ -114,6 +114,10 @@ export default function DepartLocationPage({ params }: { params: Promise<{ id: s
 
   const handleDepart = async () => {
     if (!gpsLocation || !departPhoto || !checkInId || !profileId) return
+    const prompt = nextLocation
+      ? 'Check out of this location and move on to the next one?'
+      : 'Check out of this location?'
+    if (!confirm(prompt)) return
     setIsDeparting(true)
     setError(null)
 

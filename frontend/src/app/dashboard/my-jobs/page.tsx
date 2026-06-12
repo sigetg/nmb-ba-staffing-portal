@@ -5,12 +5,24 @@ import { Card, CardContent, Badge } from '@/components/ui'
 import { Calendar, Clock, MapPin, CheckCircle2, XCircle, ChevronRight } from 'lucide-react'
 import { parseLocalDate, getLocalToday, getMultiDayDisplayStatus, getJobDateDisplay, getJobLocationDisplay } from '@/lib/utils'
 import type { JobWithDays } from '@/types'
+import { RecentCheckoutBanner } from '@/components/worker/recent-checkout-banner'
+
+// Keep in sync with UNDO_CHECKOUT_WINDOW_MINUTES in backend/app/api/jobs.py
+const UNDO_CHECKOUT_WINDOW_MINUTES = 30
 
 type Application = {
   id: string
   status: string
   applied_at: string
   jobs: JobWithDays
+}
+
+type RecentCheckout = {
+  jobId: string
+  jobTitle: string
+  locationId: string
+  locationLabel: string
+  checkOutTime: string
 }
 
 function getDayProgress(job: JobWithDays): { current: number; total: number } | null {
@@ -39,6 +51,7 @@ async function getMyJobs(userId: string) {
       activeCheckInTime: null as string | null,
       startedJobIds: new Set<string>(),
       completedByCheckoutIds: new Set<string>(),
+      recentCheckouts: [] as RecentCheckout[],
     }
   }
 
@@ -93,12 +106,36 @@ async function getMyJobs(userId: string) {
     activeCheckInTime = activeLocationCi.check_in_time
   }
 
+  // Recent checkouts within the undo window — surface a banner so an
+  // accidental tap on "Depart" / "Complete Day" is reversible.
+  const windowStart = new Date(Date.now() - UNDO_CHECKOUT_WINDOW_MINUTES * 60_000).toISOString()
+  const { data: recentRows } = await supabase
+    .from('location_check_ins')
+    .select('check_out_time, is_end_of_day, job_day_locations!inner(id, location, job_id, jobs!inner(title))')
+    .eq('ba_id', profile.id)
+    .eq('is_end_of_day', false)
+    .eq('skipped', false)
+    .gte('check_out_time', windowStart)
+    .order('check_out_time', { ascending: false })
+
+  const recentCheckouts: RecentCheckout[] = ((recentRows || []) as unknown as Array<{
+    check_out_time: string
+    job_day_locations: { id: string; location: string; job_id: string; jobs: { title: string } }
+  }>).map(row => ({
+    jobId: row.job_day_locations.job_id,
+    jobTitle: row.job_day_locations.jobs.title,
+    locationId: row.job_day_locations.id,
+    locationLabel: row.job_day_locations.location,
+    checkOutTime: row.check_out_time,
+  }))
+
   return {
     applications: ((applications || []) as Application[]).filter(a => a.jobs !== null),
     activeJobId,
     activeCheckInTime,
     startedJobIds,
     completedByCheckoutIds,
+    recentCheckouts,
   }
 }
 
@@ -115,7 +152,7 @@ export default async function MyJobsPage() {
     return null
   }
 
-  const { applications, activeJobId, activeCheckInTime, startedJobIds, completedByCheckoutIds } = await getMyJobs(user.id)
+  const { applications, activeJobId, activeCheckInTime, startedJobIds, completedByCheckoutIds, recentCheckouts } = await getMyJobs(user.id)
 
   const activeJobApp = activeJobId
     ? applications.find(app => app.jobs.id === activeJobId)
@@ -250,6 +287,18 @@ export default async function MyJobsPage() {
           Track your job applications and assignments
         </p>
       </div>
+
+      {/* Recent checkout banners — undo within UNDO_CHECKOUT_WINDOW_MINUTES */}
+      {recentCheckouts.map((rc) => (
+        <RecentCheckoutBanner
+          key={`${rc.locationId}-${rc.checkOutTime}`}
+          jobId={rc.jobId}
+          jobTitle={rc.jobTitle}
+          locationId={rc.locationId}
+          locationLabel={rc.locationLabel}
+          checkOutTime={rc.checkOutTime}
+        />
+      ))}
 
       {/* Active Job */}
       {activeJobApp && activeCheckInTime && (

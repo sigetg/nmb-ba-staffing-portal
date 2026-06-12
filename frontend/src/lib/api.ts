@@ -7,24 +7,95 @@ import type {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
+// Mobile networks frequently accept a request and then go silent (cellular
+// handoff, screen lock on iOS, weak signal indoors). Without a timeout the
+// fetch promise never settles and the UI spinner spins forever. AbortController
+// converts that into a rejection we can show or retry.
+const JSON_TIMEOUT_MS = 30_000
+const UPLOAD_TIMEOUT_MS = 60_000
+
+// If an abort fires within this window the request body almost certainly hadn't
+// been transmitted yet, so retrying a POST/PUT/PATCH/DELETE is safe (no risk of
+// double-applying the mutation server-side).
+const SAFE_RETRY_BEFORE_MS = 3_000
+
+const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD'])
+
+function isTransientNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const msg = err.message
+  return (
+    err.name === 'AbortError' ||
+    msg.includes('Failed to fetch') ||
+    msg.includes('Load failed') ||
+    msg.includes('NetworkError')
+  )
+}
+
 async function apiRequest(
   path: string,
   accessToken: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  const res = await fetch(`${API_URL}${path}`, {
-    ...options,
-    credentials: 'include',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      ...options.headers,
-    },
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(body.detail || `API error ${res.status}`)
+  const method = (options.method || 'GET').toUpperCase()
+  const isUpload = options.body instanceof FormData
+  const timeoutMs = isUpload ? UPLOAD_TIMEOUT_MS : JSON_TIMEOUT_MS
+  const idempotent = IDEMPOTENT_METHODS.has(method)
+  const maxRetries = idempotent ? 2 : 1
+
+  let attempt = 0
+  // Single retry budget on early aborts for non-idempotent verbs. Tracked
+  // outside the loop so a slow second attempt doesn't get a second free retry.
+  let nonIdempotentRetryUsed = false
+
+  while (true) {
+    const controller = new AbortController()
+    const startedAt = Date.now()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+    try {
+      const res = await fetch(`${API_URL}${path}`, {
+        ...options,
+        credentials: 'include',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          ...options.headers,
+        },
+        signal: controller.signal,
+      })
+      clearTimeout(timer)
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ detail: res.statusText }))
+        throw new Error(body.detail || `API error ${res.status}`)
+      }
+      return res
+    } catch (err) {
+      clearTimeout(timer)
+      const elapsed = Date.now() - startedAt
+      const transient = isTransientNetworkError(err)
+
+      if (transient && attempt < maxRetries) {
+        const safeToRetry =
+          idempotent || (!nonIdempotentRetryUsed && elapsed < SAFE_RETRY_BEFORE_MS)
+        if (safeToRetry) {
+          if (!idempotent) nonIdempotentRetryUsed = true
+          attempt += 1
+          // 400ms * 2^attempt + jitter
+          const backoff = 400 * 2 ** (attempt - 1) + Math.random() * 200
+          await new Promise(resolve => setTimeout(resolve, backoff))
+          continue
+        }
+      }
+
+      // Surface AbortError as a timeout-flavored message so friendlyError()
+      // maps it to "That took too long. Try again on a stronger connection."
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new Error('Request timeout')
+      }
+      throw err
+    }
   }
-  return res
 }
 
 export async function uploadJobPhoto(
@@ -56,6 +127,19 @@ export async function deleteJobPhoto(
   await apiRequest(`/api/files/job-photo/${photoId}`, accessToken, {
     method: 'DELETE',
   })
+}
+
+export async function undoLocationCheckout(
+  accessToken: string,
+  jobId: string,
+  locationId: string
+): Promise<{ message: string; check_in_id: string }> {
+  const res = await apiRequest(
+    `/api/jobs/${jobId}/locations/${locationId}/undo-checkout`,
+    accessToken,
+    { method: 'POST' }
+  )
+  return res.json()
 }
 
 export async function uploadBAPhoto(

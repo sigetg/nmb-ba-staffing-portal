@@ -1,5 +1,5 @@
 import math
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,6 +11,7 @@ from app.core.auth import (
     CurrentUser,
     get_current_admin,
     get_current_ba,
+    get_current_user,
     get_optional_user,
 )
 from app.core.supabase import get_supabase_client
@@ -690,6 +691,117 @@ async def check_out(
         "is_end_of_day": check_out_data.is_end_of_day,
         "travel_log_id": travel_log_id,
     }
+
+
+UNDO_CHECKOUT_WINDOW_MINUTES = 30
+
+
+@router.post("/{job_id}/locations/{location_id}/undo-checkout")
+async def undo_location_checkout(
+    job_id: str,
+    location_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """Revert a recent checkout so the BA can keep working at the location.
+
+    BAs may undo their own mid-day checkout within UNDO_CHECKOUT_WINDOW_MINUTES.
+    Admins may undo any checkout (including end-of-day) regardless of window.
+    """
+    supabase = get_supabase_client()
+
+    is_admin = current_user.role == "admin"
+
+    # Resolve which BA we're targeting. For a BA, that's themselves.
+    if is_admin:
+        # Admin path: scope the lookup by job + location only; pick the latest matching row.
+        checkin_query = (
+            supabase.table("location_check_ins")
+            .select("*")
+            .eq("job_day_location_id", location_id)
+            .order("check_in_time", desc=True)
+            .limit(1)
+        )
+    else:
+        profile = (
+            supabase.table("ba_profiles")
+            .select("id")
+            .eq("user_id", current_user.id)
+            .single()
+            .execute()
+        )
+        if not profile.data:
+            raise HTTPException(status_code=404, detail="BA profile not found")
+        ba_id = profile.data["id"]
+        checkin_query = (
+            supabase.table("location_check_ins")
+            .select("*")
+            .eq("job_day_location_id", location_id)
+            .eq("ba_id", ba_id)
+            .limit(1)
+        )
+
+    checkin = checkin_query.execute()
+    if not checkin.data:
+        raise HTTPException(status_code=404, detail="Check-in not found")
+
+    row = checkin.data[0]
+
+    if not row.get("check_out_time"):
+        raise HTTPException(status_code=400, detail="This location is not checked out")
+
+    if not is_admin:
+        if row.get("is_end_of_day"):
+            raise HTTPException(
+                status_code=400,
+                detail="End-of-day checkout can only be undone by an admin",
+            )
+        # 30-minute window check (datetimes from Supabase are ISO-8601 with offset)
+        check_out_dt = datetime.fromisoformat(row["check_out_time"].replace("Z", "+00:00"))
+        if datetime.now(UTC) - check_out_dt > timedelta(minutes=UNDO_CHECKOUT_WINDOW_MINUTES):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Checkout can only be undone within "
+                    f"{UNDO_CHECKOUT_WINDOW_MINUTES} minutes; please contact an admin"
+                ),
+            )
+
+    # Verify the location is part of the named job (defense against URL tampering)
+    location = (
+        supabase.table("job_day_locations")
+        .select("id")
+        .eq("id", location_id)
+        .eq("job_id", job_id)
+        .single()
+        .execute()
+    )
+    if not location.data:
+        raise HTTPException(status_code=404, detail="Location not found for this job")
+
+    # Clear the checkout fields. checkout_responses rows (end-of-day) are left in
+    # place — admin-undone end-of-days may want to keep the survey draft.
+    update_result = (
+        supabase.table("location_check_ins")
+        .update(
+            {
+                "check_out_time": None,
+                "check_out_latitude": None,
+                "check_out_longitude": None,
+                "check_out_gps_override": False,
+                "check_out_gps_override_explanation": None,
+                "is_end_of_day": False,
+            }
+        )
+        .eq("id", row["id"])
+        .execute()
+    )
+    if not update_result.data:
+        raise HTTPException(status_code=500, detail="Failed to undo checkout")
+
+    # Discard any travel log started by the original checkout
+    supabase.table("travel_logs").delete().eq("from_location_check_in_id", row["id"]).execute()
+
+    return {"message": "Checkout undone", "check_in_id": row["id"]}
 
 
 @router.post("/{job_id}/locations/{location_id}/skip")
