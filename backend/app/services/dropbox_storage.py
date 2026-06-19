@@ -11,6 +11,23 @@ logger = logging.getLogger(__name__)
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
 ALLOWED_PDF_TYPES = {"application/pdf"}
 
+# Map validated content-types to Dropbox-friendly extensions. Dropbox uses the
+# path extension to decide whether a file is previewable — uploading without a
+# recognized extension makes the file show up as an opaque BLOB.
+IMAGE_CONTENT_TYPE_EXT = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/heic": "heic",
+    "image/heif": "heif",
+}
+
+
+def image_extension_for(content_type: str) -> str:
+    """Return a known image extension for a validated content-type, defaulting to jpg."""
+    return IMAGE_CONTENT_TYPE_EXT.get((content_type or "").lower(), "jpg")
+
+
 _dbx_client: dropbox.Dropbox | None = None
 
 

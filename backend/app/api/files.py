@@ -74,7 +74,7 @@ async def upload_job_photo(
     file_bytes = await file.read()
     dropbox_storage.validate_image(file_bytes, file.content_type or "", file.filename or "")
 
-    ext = (file.filename or "photo.jpg").rsplit(".", 1)[-1]
+    ext = dropbox_storage.image_extension_for(file.content_type or "")
     timestamp = int(time.time() * 1000)
     ba_name = _get_ba_name(current_user)
     job_title = _get_job_title(job_id)
@@ -151,7 +151,7 @@ async def upload_ba_photo(
     file_bytes = await file.read()
     dropbox_storage.validate_image(file_bytes, file.content_type or "", file.filename or "")
 
-    ext = (file.filename or "photo.jpg").rsplit(".", 1)[-1]
+    ext = dropbox_storage.image_extension_for(file.content_type or "")
     ba_name = _get_ba_name(current_user)
     dropbox_path = f"{PORTAL_ROOT}/ba-photos/{ba_name}_{current_user.id}/{photo_type}.{ext}"
 

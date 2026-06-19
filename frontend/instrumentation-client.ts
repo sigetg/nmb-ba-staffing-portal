@@ -15,6 +15,14 @@ if (dsn) {
       // Benign browser quirks
       'ResizeObserver loop limit exceeded',
       'ResizeObserver loop completed with undelivered notifications',
+      // Mobile network reality — caught + surfaced to the user via
+      // friendlyError(); not actionable as bugs. Real retry-exhaustion
+      // failures throw 'Request timeout' instead and still reach Sentry.
+      'Failed to fetch',
+      'Load failed',
+      // Third-party in-app browser / extension noise (not in this codebase;
+      // stacktrace points at embed_script.js).
+      'Timeout waiting for response',
     ],
     denyUrls: [
       // Third-party scripts injected by in-app browsers (Facebook, Instagram,
