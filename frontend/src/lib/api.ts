@@ -142,6 +142,18 @@ export async function undoLocationCheckout(
   return res.json()
 }
 
+export async function geocodeAddress(
+  accessToken: string,
+  address: string
+): Promise<{ latitude: number; longitude: number }> {
+  const res = await apiRequest('/api/admin/geocode-address', accessToken, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address }),
+  })
+  return res.json()
+}
+
 export async function uploadBAPhoto(
   accessToken: string,
   file: File,

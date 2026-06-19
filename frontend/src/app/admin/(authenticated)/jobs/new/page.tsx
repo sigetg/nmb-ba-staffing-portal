@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button, Alert } from '@/components/ui'
 import { ChevronLeft, ChevronRight, Save } from 'lucide-react'
-import { uploadJobWorksheet } from '@/lib/api'
+import { uploadJobWorksheet, geocodeAddress } from '@/lib/api'
 import { WizardProvider, useWizard, type WizardState } from '@/components/admin/job-wizard/wizard-context'
 import { WizardProgress } from '@/components/admin/job-wizard/wizard-progress'
 import { StepBasicInfo } from '@/components/admin/job-wizard/step-basic-info'
@@ -47,7 +47,41 @@ function WizardContent() {
 
     setIsLoading(true)
 
+    // Backfill coordinates for any address the admin typed without picking
+    // from autocomplete. Skips drafts so admins can save partial work.
+    // Keyed by wizard-local location id so the insert step can read coords
+    // without mutating the wizard's React state.
+    const resolvedCoords = new Map<string, { latitude: number; longitude: number }>()
+
     try {
+      if (status === 'published') {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) {
+          setError('Not authenticated')
+          return
+        }
+        const failed: string[] = []
+        for (const day of state.days) {
+          for (const loc of day.locations) {
+            if (loc.latitude != null && loc.longitude != null) continue
+            const addr = loc.location.trim()
+            if (!addr) continue
+            try {
+              const coords = await geocodeAddress(session.access_token, addr)
+              resolvedCoords.set(loc.id, coords)
+            } catch {
+              failed.push(addr)
+            }
+          }
+        }
+        if (failed.length > 0) {
+          setError(
+            `Couldn't find coordinates for: ${failed.join('; ')}. Pick a suggestion from the dropdown or fix the address.`,
+          )
+          return
+        }
+      }
+
       // Detect timezone from first location's coordinates
       const firstLoc = state.days[0]?.locations[0]
       let timezone = 'America/Chicago'
@@ -88,12 +122,13 @@ function WizardContent() {
         }
 
         for (const loc of day.locations) {
+          const fallback = resolvedCoords.get(loc.id)
           const { error: locError } = await supabase.from('job_day_locations').insert({
             job_day_id: dayRow.id,
             job_id: job.id,
             location: loc.location.trim(),
-            latitude: loc.latitude,
-            longitude: loc.longitude,
+            latitude: loc.latitude ?? fallback?.latitude ?? null,
+            longitude: loc.longitude ?? fallback?.longitude ?? null,
             start_time: loc.start_time,
             end_time: loc.end_time,
             sort_order: loc.sort_order,

@@ -21,8 +21,84 @@ from app.services.email import (
     send_ba_suspended_email,
     send_job_reminder_email,
 )
+from app.services.geocoding import geocode_address
 
 router = APIRouter()
+
+
+class GeocodeRequest(BaseModel):
+    address: str
+
+
+class GeocodeResponse(BaseModel):
+    latitude: float
+    longitude: float
+
+
+@router.post("/geocode-address", response_model=GeocodeResponse)
+async def geocode_address_endpoint(
+    payload: GeocodeRequest,
+    _: CurrentUser = Depends(get_current_admin),
+) -> GeocodeResponse:
+    """Admin fallback geocoder for job-creation locations that lack lat/lng."""
+    result = await geocode_address(payload.address)
+    if result is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Could not geocode that address. Try selecting a suggestion from the dropdown or refining the address.",
+        )
+    lat, lng = result
+    return GeocodeResponse(latitude=lat, longitude=lng)
+
+
+@router.post("/backfill-job-day-location-coords")
+async def backfill_job_day_location_coords(
+    _: CurrentUser = Depends(get_current_admin),
+) -> dict:
+    """Geocode every job_day_locations row whose latitude or longitude is NULL.
+
+    Idempotent. Returns a summary of resolved/unresolved rows. Admin-only.
+    """
+    supabase = get_supabase_client()
+    rows = (
+        supabase.table("job_day_locations")
+        .select("id, location, latitude, longitude")
+        .or_("latitude.is.null,longitude.is.null")
+        .execute()
+        .data
+        or []
+    )
+
+    resolved: list[dict] = []
+    unresolved: list[dict] = []
+    for row in rows:
+        address = (row.get("location") or "").strip()
+        if not address:
+            unresolved.append({"id": row["id"], "address": address, "reason": "empty"})
+            continue
+        coords = await geocode_address(address)
+        if coords is None:
+            unresolved.append({"id": row["id"], "address": address, "reason": "not_found"})
+            continue
+        lat, lng = coords
+        upd = (
+            supabase.table("job_day_locations")
+            .update({"latitude": lat, "longitude": lng})
+            .eq("id", row["id"])
+            .execute()
+        )
+        if upd.data:
+            resolved.append({"id": row["id"], "address": address, "lat": lat, "lng": lng})
+        else:
+            unresolved.append({"id": row["id"], "address": address, "reason": "update_failed"})
+
+    return {
+        "total": len(rows),
+        "resolved_count": len(resolved),
+        "unresolved_count": len(unresolved),
+        "resolved": resolved,
+        "unresolved": unresolved,
+    }
 
 
 class BAApproval(BaseModel):
