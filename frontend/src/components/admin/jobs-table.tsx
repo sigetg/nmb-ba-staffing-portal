@@ -129,9 +129,16 @@ export function JobsTable({ jobs, jobTypes }: JobsTableProps) {
 
     if (search) {
       const q = search.toLowerCase()
-      result = result.filter(job =>
-        job.title.toLowerCase().includes(q) || job.brand.toLowerCase().includes(q)
-      )
+      result = result.filter(job => {
+        if (job.title.toLowerCase().includes(q)) return true
+        if (job.brand.toLowerCase().includes(q)) return true
+        for (const day of job.job_days || []) {
+          for (const loc of day.job_day_locations || []) {
+            if (loc.location?.toLowerCase().includes(q)) return true
+          }
+        }
+        return false
+      })
     }
 
     if (sortColumn) {
@@ -156,7 +163,7 @@ export function JobsTable({ jobs, jobTypes }: JobsTableProps) {
           <div className="flex flex-wrap gap-4">
             <input
               type="text"
-              placeholder="Search jobs or brands..."
+              placeholder="Search jobs, brands, or locations..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm flex-1 min-w-[200px]"
