@@ -230,7 +230,7 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
   }
 
   const isWithinRange = distance !== null && distance <= 200
-  const canOverride = distance !== null && distance > 200
+  const canOverride = distance === null || distance > 200
 
   return (
     <div className="max-w-lg mx-auto space-y-6 pb-8">
@@ -266,7 +266,7 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
             </div>
           ) : (
             <div className="space-y-3">
-              {distance !== null && (
+              {distance !== null ? (
                 <div className={`p-3 rounded-lg ${isWithinRange ? 'bg-green-50' : 'bg-red-50'}`}>
                   <div className="flex items-center gap-2">
                     {isWithinRange ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <XCircle className="w-5 h-5 text-red-600" />}
@@ -277,6 +277,16 @@ export default function DayCheckoutPage({ params }: { params: Promise<{ id: stri
                       <p className={`text-xs ${isWithinRange ? 'text-green-700' : 'text-red-700'}`}>
                         Distance: {distance}m {!isWithinRange && '(max: 200m)'}
                       </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 rounded-lg bg-amber-50">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                    <div>
+                      <p className="font-medium text-sm text-amber-800">Distance can&apos;t be verified</p>
+                      <p className="text-xs text-amber-700">No coordinates set for this location. Use override to continue.</p>
                     </div>
                   </div>
                 </div>
