@@ -65,26 +65,39 @@ async function getMyJobs(userId: string) {
       .order('applied_at', { ascending: false }),
     supabase
       .from('location_check_ins')
-      .select('id, check_in_time, check_out_time, skipped, job_day_locations!inner(job_id)')
-      .eq('ba_id', profile.id)
-      .eq('skipped', false),
+      .select('id, check_in_time, check_out_time, skipped, job_day_location_id, job_day_locations!inner(job_id)')
+      .eq('ba_id', profile.id),
   ])
 
-  // Build started/completed sets from location check-ins
+  // Track per-job sets of locations the worker has finished (checked out or skipped).
+  // A multi-day job is only "completed by checkout" once EVERY job_day_location across
+  // ALL days is done — counting raw check-in rows would mark a 2-day job complete after
+  // day 1's checkout.
   const startedJobIds = new Set<string>()
-  const jobCheckoutMap = new Map<string, { total: number; checkedOut: number }>()
-  for (const ci of (allLocationCIs || []) as unknown as { check_in_time: string; check_out_time: string | null; job_day_locations: { job_id: string } }[]) {
+  const completedLocsByJob = new Map<string, Set<string>>()
+  for (const ci of (allLocationCIs || []) as unknown as {
+    check_out_time: string | null
+    skipped: boolean
+    job_day_location_id: string
+    job_day_locations: { job_id: string }
+  }[]) {
     const jobId = ci.job_day_locations.job_id
-    startedJobIds.add(jobId)
-    const entry = jobCheckoutMap.get(jobId) || { total: 0, checkedOut: 0 }
-    entry.total++
-    if (ci.check_out_time) entry.checkedOut++
-    jobCheckoutMap.set(jobId, entry)
+    if (!ci.skipped) startedJobIds.add(jobId)
+    if (ci.check_out_time || ci.skipped) {
+      if (!completedLocsByJob.has(jobId)) completedLocsByJob.set(jobId, new Set())
+      completedLocsByJob.get(jobId)!.add(ci.job_day_location_id)
+    }
   }
+
   const completedByCheckoutIds = new Set<string>()
-  for (const [jobId, entry] of jobCheckoutMap) {
-    if (entry.total > 0 && entry.total === entry.checkedOut) {
-      completedByCheckoutIds.add(jobId)
+  for (const app of (applications || []) as Application[]) {
+    const job = app.jobs
+    if (!job) continue
+    const allLocs = (job.job_days || []).flatMap(d => d.job_day_locations || [])
+    if (allLocs.length === 0) continue
+    const done = completedLocsByJob.get(job.id) || new Set<string>()
+    if (allLocs.every(l => done.has(l.id))) {
+      completedByCheckoutIds.add(job.id)
     }
   }
 
